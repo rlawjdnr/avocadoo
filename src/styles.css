@@ -339,6 +339,38 @@ button:disabled {
   place-items: center;
 }
 
+.polaroid-remove {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.polaroid-remove img {
+  width: 22px;
+  height: 22px;
+}
+
+.polaroid-remove-left {
+  left: 75px;
+  top: 4px;
+}
+
+.polaroid-remove-center {
+  left: 78px;
+  top: 7px;
+}
+
+.polaroid-remove-right {
+  left: 81px;
+  top: 8px;
+}
+
 .plus-asset {
   width: 24px;
   height: 24px;

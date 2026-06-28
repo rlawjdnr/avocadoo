@@ -21,6 +21,7 @@ const assets = {
   send: './assets/icon-send.svg',
   upload: './assets/icon-upload.svg',
   pencil: './assets/icon-pencil.svg',
+  photoDelete: './assets/icon-photo-delete.svg',
 };
 
 const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111-1111-4111-8111-111111111111';
@@ -418,7 +419,7 @@ function sortEntriesByDate(entries) {
   return entries.slice().sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
 }
 
-function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, isLast = true }) {
+function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, isLast = true, onRemove }) {
   const src = getPhotoSrc(photo);
 
   return (
@@ -434,6 +435,19 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
           {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <img src={src} alt="" />}
         </span>
       </span>
+      {!add && onRemove ? (
+        <button
+          className={`polaroid-remove polaroid-remove-${variant}`}
+          type="button"
+          aria-label="이미지 삭제"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+        >
+          <img src={assets.photoDelete} alt="" />
+        </button>
+      ) : null}
     </motion.span>
   );
 }
@@ -913,13 +927,13 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
   );
 }
 
-function UploadGrid({ photos, onFiles }) {
+function UploadGrid({ photos, onFiles, onRemovePhoto }) {
   const variants = ['left', 'center', 'right', 'center', 'right'];
 
   return (
     <div className="upload-grid">
       {photos.map((photo, index) => (
-        <ImagePolaroid key={photo.id} photo={photo} variant={variants[index] || 'center'} />
+        <ImagePolaroid key={photo.id} photo={photo} variant={variants[index] || 'center'} onRemove={() => onRemovePhoto(photo.id)} />
       ))}
       <label className="upload-add-control" aria-label="이미지 첨부">
         <ImagePolaroid add />
@@ -963,6 +977,14 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
     event.target.value = '';
   }
 
+  function removePhoto(photoId) {
+    setPhotos((current) => {
+      const removed = current.find((photo) => photo.id === photoId);
+      if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
+      return current.filter((photo) => photo.id !== photoId);
+    });
+  }
+
   async function createDiaryEntry() {
     if (isSubmitting) return;
     setError('');
@@ -1000,7 +1022,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       <NavHeader onNavigate={onNavigate} />
       <motion.div className="upload-content" variants={uploadContentVariants} initial="hidden" animate="visible">
         <AnimatedUploadField order={0}>
-          <UploadGrid photos={photos} onFiles={handleFiles} />
+          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} />
         </AnimatedUploadField>
         <form className="entry-form" id="entry-form" onSubmit={handleSubmit}>
           <AnimatedUploadField order={1}>
