@@ -73,6 +73,7 @@ const checks = [
   ['mobile add polaroid dashed border renders all sides', css.includes('repeating-linear-gradient(90deg') && css.includes('repeating-linear-gradient(180deg') && css.includes('left top / 1.5px 100% no-repeat') && css.includes('right top / 1.5px 100% no-repeat')],
   ['upload submit creates list entry', app.includes('onCreateEntry({') && app.includes("onNavigate('list')")],
   ['upload form follows photo grid', app.includes('className="upload-content"') && !css.includes('top: 350px')],
+  ['upload memo field has no mobile left inset', css.includes('.entry-form') && css.includes('margin-left: 0') && css.includes('.memo-field') && css.includes('padding: 20px 0 0') && css.includes('.memo-field textarea') && css.includes('padding: 0')],
   ['upload fields enter with staggered spring motion', app.includes('const uploadFieldSpring') && app.includes('stiffness: 480') && app.includes('damping: 50') && app.includes('delay: order * 0.03') && app.includes('hidden: { opacity: 0, y: 500 }') && app.includes('function AnimatedUploadField')],
   ['upload entry targets are animated individually', app.includes('<motion.div className="upload-content" variants={uploadContentVariants} initial="hidden" animate="visible">') && app.includes('<AnimatedUploadField order={0}>') && app.includes('<AnimatedUploadField order={3}>') && css.includes('.entry-form > div')],
   ['phone stage follows device viewport', css.includes('width: 100vw') && css.includes('height: 100dvh') && css.includes('flex: 0 0 100vw')],
