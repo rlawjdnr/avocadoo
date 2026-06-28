@@ -614,10 +614,16 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
 
   async function handleMonthDragEnd(event, info) {
     const dragOffset = info.offset.x;
+    const verticalOffset = info.offset.y;
     dragBlockedClick.current = Math.abs(dragOffset) > 10;
     window.setTimeout(() => {
       dragBlockedClick.current = false;
     }, 0);
+
+    if (Math.abs(verticalOffset) > Math.abs(dragOffset)) {
+      monthControls.start({ x: -screenPushDistance, transition: monthSlideSpring });
+      return;
+    }
 
     if (dragOffset <= -60 && canGoNextMonth) {
       await monthControls.start({ x: -screenPushDistance * 2, transition: monthSlideSpring });
@@ -650,6 +656,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
           <motion.div
             className="home-month-track"
             drag="x"
+            dragDirectionLock
             dragConstraints={monthDragConstraints}
             dragElastic={monthDragElastic}
             initial={{ x: -screenPushDistance }}
@@ -1097,8 +1104,15 @@ async function fetchDiaryEntries() {
     .order('diary_date', { ascending: false })
     .order('created_at', { ascending: false });
 
+  if (isMissingSupabaseSchema(error)) return sortEntriesByDate(sampleEntries);
   if (error) throw error;
   return sortEntriesByDate((data || []).map(mapDiaryEntry));
+}
+
+function isMissingSupabaseSchema(error) {
+  if (!error) return false;
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''} ${error.code || ''}`;
+  return message.includes('schema cache') || message.includes('diary_entries') || message.includes('PGRST205');
 }
 
 async function uploadDiaryPhotos(entryId, photos) {

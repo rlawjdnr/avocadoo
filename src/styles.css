@@ -13,6 +13,7 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -106,13 +107,14 @@ button:disabled {
   inset: 0;
   z-index: 1;
   overflow: hidden;
-  touch-action: pan-x pan-y;
+  touch-action: pan-y;
 }
 
 .home-month-track {
   display: flex;
   width: max-content;
   min-height: 100%;
+  touch-action: pan-y;
 }
 
 .home-month-page {
@@ -218,6 +220,7 @@ button:disabled {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .week-card {
@@ -334,9 +337,17 @@ button:disabled {
 }
 
 .polaroid-add .polaroid-image {
-  border: 1.5px dashed #d6d6d6;
   display: grid;
   place-items: center;
+  overflow: visible;
+}
+
+.polaroid-add .polaroid-image::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1.5px dashed #d6d6d6;
+  pointer-events: none;
 }
 
 .polaroid-remove {
@@ -859,7 +870,7 @@ button:disabled {
   outline: 0;
   background: transparent;
   color: #2a3038;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
@@ -953,7 +964,7 @@ button:disabled {
   outline: 0;
   background: transparent;
   color: #2a3038;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
   text-align: right;
 }
@@ -990,7 +1001,7 @@ button:disabled {
   outline: 0;
   background: transparent;
   color: #2a3038;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
