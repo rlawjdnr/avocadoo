@@ -102,6 +102,8 @@ const monthSlideSpring = {
   stiffness: 480,
   damping: 50,
 };
+const monthSwipeMinDistance = 96;
+const monthSwipeDominanceRatio = 1.45;
 
 const uploadFieldSpring = {
   type: 'spring',
@@ -615,24 +617,29 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   async function handleMonthDragEnd(event, info) {
     const dragOffset = info.offset.x;
     const verticalOffset = info.offset.y;
-    dragBlockedClick.current = Math.abs(dragOffset) > 10;
+    const horizontalDistance = Math.abs(dragOffset);
+    const verticalDistance = Math.abs(verticalOffset);
+    const monthSwipeDistance = Math.max(monthSwipeMinDistance, screenPushDistance * 0.18);
+    const hasHorizontalIntent = horizontalDistance >= monthSwipeDistance && horizontalDistance > verticalDistance * monthSwipeDominanceRatio;
+
+    dragBlockedClick.current = horizontalDistance > 12 && horizontalDistance > verticalDistance;
     window.setTimeout(() => {
       dragBlockedClick.current = false;
     }, 0);
 
-    if (Math.abs(verticalOffset) > Math.abs(dragOffset)) {
+    if (!hasHorizontalIntent) {
       monthControls.start({ x: -screenPushDistance, transition: monthSlideSpring });
       return;
     }
 
-    if (dragOffset <= -60 && canGoNextMonth) {
+    if (dragOffset < 0 && canGoNextMonth) {
       await monthControls.start({ x: -screenPushDistance * 2, transition: monthSlideSpring });
       onChangeMonth(1);
       monthControls.set({ x: -screenPushDistance });
       return;
     }
 
-    if (dragOffset >= 60) {
+    if (dragOffset > 0) {
       await monthControls.start({ x: 0, transition: monthSlideSpring });
       onChangeMonth(-1);
       monthControls.set({ x: -screenPushDistance });
