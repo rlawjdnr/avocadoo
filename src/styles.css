@@ -623,17 +623,18 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  width: 100%;
+  width: calc(100% + 56px);
   height: 56px;
-  margin: 4px -24px 0 0;
-  padding: 4px 0 12px;
+  margin: 4px -28px 0;
+  padding: 4px 28px 12px;
 }
 
 .diary-item-detail .reaction-bar {
   gap: 4px;
   margin-top: 8px;
   height: 56px;
-  padding: 8px 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .reaction-button {
@@ -993,6 +994,14 @@ button {
     width: calc(100% + 40px);
     margin-left: -20px;
     margin-right: -20px;
+  }
+
+  .reaction-bar {
+    width: calc(100% + 40px);
+    margin-left: -20px;
+    margin-right: -20px;
+    padding-left: 20px;
+    padding-right: 20px;
   }
 
   .upload-content {

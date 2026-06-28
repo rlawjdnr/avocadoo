@@ -56,6 +56,7 @@ const checks = [
   ['entries filtered by selected week', app.includes('entries.filter((entry) => entry.weekId === selectedWeek.id)')],
   ['upload entry belongs to selected week', app.includes('weekId: selectedWeek.id')],
   ['diary list is scrollable', css.includes('overflow-y: auto') && css.includes('height: 784px') && css.includes('padding-bottom: 142px')],
+  ['reaction bar uses full screen width with content padding', css.includes('.reaction-bar') && css.includes('width: calc(100% + 56px)') && css.includes('margin: 4px -28px 0') && css.includes('padding: 4px 28px 12px')],
   ['no horizontal scroll layout', css.includes('overflow-x: hidden') && css.includes('width: min(390px, 100vw)') && css.includes('width: 100%')],
   ['annotation: max four photos', app.includes('photos.slice(0, 4)')],
   ['upload screen starts empty', !app.includes("const row = ['couple'") && app.includes('<UploadGrid photos={photos} onFiles={handleFiles} />')],
