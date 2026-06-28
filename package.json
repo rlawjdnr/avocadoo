@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "test": "node tests/design.spec.js"
+    "test": "node tests/design.spec.js",
+    "deploy:check": "npm test && npm run build",
+    "deploy": "npm run deploy:check && git push origin main"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

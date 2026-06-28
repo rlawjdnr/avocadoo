@@ -42,3 +42,15 @@ GitHub repository secrets에 아래 값을 등록해야 합니다.
 - `VITE_SUPABASE_ANON_KEY`
 
 GitHub 저장소의 Pages 설정에서 source를 `GitHub Actions`로 선택하면 `main` 브랜치 push 시 자동 배포됩니다.
+
+로컬에서 배포 전 검증만 할 때:
+
+```bash
+npm run deploy:check
+```
+
+검증 후 현재 브랜치를 push해서 배포를 시작할 때:
+
+```bash
+npm run deploy
+```
