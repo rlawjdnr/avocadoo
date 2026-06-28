@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useAnimationControls } from 'framer-motion';
+import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
 const assets = {
   bg: './assets/bg-home.png',
@@ -22,8 +23,10 @@ const assets = {
   pencil: './assets/icon-pencil.svg',
 };
 
-const diaryText =
-  '혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.혜민이가 귀엽게 나타났다.';
+const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111-1111-4111-8111-111111111111';
+const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
+const currentMemberNickname = '정정욱';
+const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
 
 const uploadButtonRadiusSpring = {
   type: 'spring',
@@ -89,11 +92,10 @@ const polaroidGap = {
 const screenPushTransition = {
   type: 'spring',
   stiffness: 480,
-  damping: 55,
+  damping: 50,
 };
 
-const screenPushDistance = 390;
-const coveredPageOffset = -screenPushDistance * 0.5;
+const defaultScreenPushDistance = 390;
 const monthSlideSpring = {
   type: 'spring',
   stiffness: 480,
@@ -153,7 +155,35 @@ const screenPushShadowTransition = {
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
 
-function screenMotionProps(screenName, transitionKind, active = true) {
+function getViewportWidth() {
+  if (typeof window === 'undefined') return defaultScreenPushDistance;
+  return window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || defaultScreenPushDistance;
+}
+
+function useViewportWidth() {
+  const [viewportWidth, setViewportWidth] = useState(getViewportWidth);
+
+  useEffect(() => {
+    function updateViewportWidth() {
+      setViewportWidth(getViewportWidth());
+    }
+
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    window.visualViewport?.addEventListener('resize', updateViewportWidth);
+
+    return () => {
+      window.removeEventListener('resize', updateViewportWidth);
+      window.visualViewport?.removeEventListener('resize', updateViewportWidth);
+    };
+  }, []);
+
+  return viewportWidth;
+}
+
+function screenMotionProps(screenName, transitionKind, active = true, screenPushDistance = defaultScreenPushDistance) {
+  const coveredPageOffset = -screenPushDistance * 0.5;
+
   if (transitionKind === 'home-to-list') {
     if (screenName === 'home') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
@@ -205,6 +235,18 @@ function screenMotionProps(screenName, transitionKind, active = true) {
   return { animate: { x: active ? 0 : screenPushDistance }, style: { zIndex: active ? 2 : 1 }, transition: { duration: 0 } };
 }
 
+function CoveredPageDim({ visible = false }) {
+  return (
+    <motion.span
+      className="page-dim"
+      aria-hidden="true"
+      initial={false}
+      animate={{ opacity: visible ? 0.18 : 0 }}
+      transition={screenPushTransition}
+    />
+  );
+}
+
 function padDatePart(value) {
   return String(value).padStart(2, '0');
 }
@@ -229,12 +271,6 @@ function getMonthLastDay(monthStart) {
   return new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
 }
 
-function getDemoPhotosForWeek(startDay) {
-  if (startDay === 1) return ['couple', 'water', 'standing', 'food'];
-  if (startDay === 8) return ['couple', 'water'];
-  return [];
-}
-
 function buildMonthWeeks(monthStart) {
   const monthNumber = monthStart.getMonth() + 1;
   if (monthStart > todayStart) return [];
@@ -255,7 +291,7 @@ function buildMonthWeeks(monthStart) {
       label: weekLabels[index] || `${index + 1}번째 주`,
       startDate: toDateInputValue(startDate),
       isFuture: false,
-      photos: isInitialMonth ? getDemoPhotosForWeek(startDay) : [],
+      photos: [],
     });
   }
 
@@ -263,7 +299,6 @@ function buildMonthWeeks(monthStart) {
 }
 
 const initialWeeks = buildMonthWeeks(initialMonthStart);
-const initialWeekByStartDay = Object.fromEntries(initialWeeks.map((week) => [Number(week.startDate.slice(-2)), week]));
 
 function getInitialMonthDate(day) {
   return toDateInputValue(new Date(initialMonthStart.getFullYear(), initialMonthStart.getMonth(), day));
@@ -271,51 +306,36 @@ function getInitialMonthDate(day) {
 
 const sampleEntries = [
   {
-    id: 'sample-week-2-a',
-    weekId: initialWeekByStartDay[8]?.id || initialWeeks[0].id,
-    dateLabel: formatDateLabel(getInitialMonthDate(12)),
-    weekday: formatWeekday(getInitialMonthDate(12)),
-    nickname: '{nickname}',
-    photos: ['couple', 'water', 'standing', 'food'],
-    text: '{여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다.}',
-    location: '건대입구',
-    liked: false,
-    comments: [
-      { id: 'sample-week-1-a-comment-1', nickname: '{nickname2}', text: '짱 재밌었다 그치', liked: false },
-      { id: 'sample-week-1-a-comment-2', nickname: '{nickname1}', text: '응응 완전 최고!!!', liked: false },
-    ],
-  },
-  {
-    id: 'sample-week-2-b',
-    weekId: initialWeekByStartDay[8]?.id || initialWeeks[0].id,
-    dateLabel: formatDateLabel(getInitialMonthDate(11)),
-    weekday: formatWeekday(getInitialMonthDate(11)),
-    nickname: '정정욱',
-    photos: ['couple', 'water', 'standing', 'food'],
-    text: diaryText,
-    location: '',
-    liked: false,
-    comments: [],
-  },
-  {
     id: 'sample-week-1-a',
-    weekId: initialWeekByStartDay[1]?.id || initialWeeks[0].id,
-    dateLabel: formatDateLabel(getInitialMonthDate(7)),
-    weekday: formatWeekday(getInitialMonthDate(7)),
-    nickname: '{nickname}',
-    photos: ['couple', 'water', 'standing', 'food'],
-    text: '{여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다.}',
-    location: '건대입구',
-  },
-  {
-    id: 'sample-week-1-b',
-    weekId: initialWeekByStartDay[1]?.id || initialWeeks[0].id,
+    weekId: getWeekIdForDate(getInitialMonthDate(6)),
+    date: getInitialMonthDate(6),
     dateLabel: formatDateLabel(getInitialMonthDate(6)),
     weekday: formatWeekday(getInitialMonthDate(6)),
-    nickname: '정정욱',
-    photos: ['couple', 'water', 'standing', 'food'],
-    text: diaryText,
-    location: '',
+    nickname: '{nickname}',
+    photos: [
+      { id: 'sample-couple', src: assets.photos.couple },
+      { id: 'sample-water', src: assets.photos.water },
+      { id: 'sample-standing', src: assets.photos.standing },
+      { id: 'sample-food', src: assets.photos.food },
+    ],
+    text: '{여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다.}',
+    location: '건대입구',
+    liked: true,
+    comments: [{ id: 'sample-comment-1', nickname: '정정욱', text: '좋았던 하루!', liked: false }],
+  },
+  {
+    id: 'sample-week-2-a',
+    weekId: getWeekIdForDate(getInitialMonthDate(12)),
+    date: getInitialMonthDate(12),
+    dateLabel: formatDateLabel(getInitialMonthDate(12)),
+    weekday: formatWeekday(getInitialMonthDate(12)),
+    nickname: currentMemberNickname,
+    photos: [
+      { id: 'sample-food-2', src: assets.photos.food },
+      { id: 'sample-water-2', src: assets.photos.water },
+    ],
+    text: '혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다.',
+    location: '건대입구',
     liked: false,
     comments: [],
   },
@@ -324,7 +344,7 @@ const sampleEntries = [
 function getPhotoSrc(photo) {
   if (!photo) return '';
   if (typeof photo === 'string') return assets.photos[photo] || photo;
-  return photo.src;
+  return photo.src || photo.image_url || photo.publicUrl || '';
 }
 
 function formatDateLabel(value) {
@@ -339,6 +359,63 @@ function formatWeekday(value) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return '';
   return ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][date.getDay()];
+}
+
+function getWeekIdForDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  const weekStartDay = Math.floor((date.getDate() - 1) / 7) * 7 + 1;
+  return `week-${toDateInputValue(new Date(date.getFullYear(), date.getMonth(), weekStartDay))}`;
+}
+
+function mapDiaryEntry(row) {
+  const photos = (row.diary_images || [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((image) => ({
+      id: image.id,
+      src: image.image_url,
+      storagePath: image.storage_path,
+    }));
+  const comments = (row.diary_comments || [])
+    .slice()
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map((comment) => ({
+      id: comment.id,
+      nickname: comment.couple_members?.nickname || currentMemberNickname,
+      text: comment.body_text,
+      liked: comment.liked,
+    }));
+
+  return {
+    id: row.id,
+    weekId: getWeekIdForDate(row.diary_date),
+    date: row.diary_date,
+    dateLabel: formatDateLabel(row.diary_date),
+    weekday: formatWeekday(row.diary_date),
+    nickname: row.couple_members?.nickname || currentMemberNickname,
+    photos,
+    text: row.body_text,
+    location: row.location_text || '',
+    liked: row.liked,
+    comments,
+  };
+}
+
+function applyEntriesToWeeks(weeks, entries) {
+  return weeks.map((week) => {
+    const photos = entries
+      .filter((entry) => entry.weekId === week.id && entry.photos.length > 0)
+      .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`))
+      .map((entry) => entry.photos[0])
+      .slice(0, 4);
+
+    return { ...week, photos };
+  });
+}
+
+function sortEntriesByDate(entries) {
+  return entries.slice().sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
 }
 
 function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, isLast = true }) {
@@ -408,7 +485,7 @@ function PhotoStack({ onAdd, photos }) {
     <motion.span {...stackMotion}>
       {visible.map((photo, index) => (
         <ImagePolaroid
-          key={`${photo}-${index}`}
+          key={`${photo.id || getPhotoSrc(photo)}-${index}`}
           photo={photo}
           variant={variants[index]}
           compact={isPressed}
@@ -419,7 +496,7 @@ function PhotoStack({ onAdd, photos }) {
   );
 }
 
-function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false }) {
+function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false, bigWidth = uploadButtonSize.big }) {
   const [isPressed, setIsPressed] = useState(false);
   const releasePress = () => setIsPressed(false);
 
@@ -428,7 +505,7 @@ function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBi
       <motion.button
         className={className}
         type="button"
-        initial={reverseFromBig ? { borderRadius: uploadButtonRadius.big, width: uploadButtonSize.big, y: -9.5 } : false}
+        initial={reverseFromBig ? { borderRadius: uploadButtonRadius.big, width: bigWidth, y: -9.5 } : false}
         animate={{ borderRadius: uploadButtonRadius.small, scale: isPressed ? 0.97 : 1, width: uploadButtonSize.small, y: 0 }}
         transition={{ ...uploadButtonTransition, scale: isPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring }}
         onPointerDown={() => setIsPressed(true)}
@@ -499,7 +576,7 @@ function HomeMonthPage({ weeks, onSelectWeek }) {
   );
 }
 
-function Home({ active = true, monthDate, weeks, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind }) {
+function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance }) {
   const dragBlockedClick = useRef(false);
   const monthControls = useAnimationControls();
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
@@ -516,6 +593,10 @@ function Home({ active = true, monthDate, weeks, onChangeMonth, onSelectWeek, re
     { offset: 0, date: monthDate },
     { offset: 1, date: addMonths(monthDate, 1) },
   ];
+
+  useEffect(() => {
+    monthControls.set({ x: -screenPushDistance });
+  }, [monthControls, monthDate, screenPushDistance]);
 
   async function handleMonthDragEnd(event, info) {
     const dragOffset = info.offset.x;
@@ -547,7 +628,7 @@ function Home({ active = true, monthDate, weeks, onChangeMonth, onSelectWeek, re
   }
 
   return (
-    <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active)}>
+    <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader monthDate={monthDate} />
       <div className="home-month-viewport">
@@ -564,21 +645,15 @@ function Home({ active = true, monthDate, weeks, onChangeMonth, onSelectWeek, re
             {monthPages.map((month) => (
               <HomeMonthPage
                 key={getMonthKey(month.date)}
-                weeks={month.offset === 0 ? weeks : buildMonthWeeks(month.date)}
+                weeks={month.offset === 0 ? weeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
                 onSelectWeek={handleSelectWeek}
               />
             ))}
           </motion.div>
         </div>
       </div>
-      {weeks[0] ? <UploadButton reverseFromBig={returningFromUpload} onNavigate={() => onSelectWeek(weeks[0], 'upload')} /> : null}
-      <motion.span
-        className="page-dim"
-        aria-hidden="true"
-        initial={false}
-        animate={{ opacity: transitionKind === 'home-to-list' ? 0.18 : 0 }}
-        transition={screenPushTransition}
-      />
+      {weeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(weeks[0], 'upload')} /> : null}
+      <CoveredPageDim visible={transitionKind === 'home-to-list'} />
     </motion.section>
   );
 }
@@ -611,21 +686,22 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = ['water', 'standing', 'standing', 'couple'] }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false }) {
   const [isPressed, setIsPressed] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const visible = photos.slice(0, 4);
   if (visible.length === 0) return null;
   const releasePress = () => setIsPressed(false);
+  const expanded = lockedExpanded || isExpanded;
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
 
   return (
-    <div className={`large-stack-scroll ${isExpanded ? 'large-stack-scroll-expanded' : ''}`}>
+    <div className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''}`}>
       <motion.div
         className="large-stack"
         aria-hidden="true"
         initial={false}
-        animate={{ scale: isPressed ? 0.97 : 1, width: isExpanded ? expandedWidth : largePolaroidCollapsedWidth }}
+        animate={{ scale: isPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
         transition={{
           scale: isPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring,
           width: largePolaroidSpring,
@@ -634,7 +710,9 @@ function LargePolaroidStack({ photos = ['water', 'standing', 'standing', 'couple
         onPointerUp={releasePress}
         onPointerCancel={releasePress}
         onPointerLeave={releasePress}
-        onClick={() => setIsExpanded((current) => !current)}
+        onClick={() => {
+          if (!lockedExpanded) setIsExpanded((current) => !current);
+        }}
       >
         {visible.map((photo, index) => (
           <motion.span
@@ -642,7 +720,7 @@ function LargePolaroidStack({ photos = ['water', 'standing', 'standing', 'couple
             key={`${photo.id || photo}-${index}`}
             initial={false}
             animate={
-              isExpanded
+              expanded
                 ? {
                     left: index * (largePolaroidWidth + largePolaroidPressedGap),
                     rotate: 0,
@@ -654,68 +732,113 @@ function LargePolaroidStack({ photos = ['water', 'standing', 'standing', 'couple
             }
             transition={{
               ...largePolaroidSpring,
-              delay: isExpanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
+              delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
             }}
           >
             <img src={getPhotoSrc(photo)} alt="" />
           </motion.span>
         ))}
-        <span className="large-date">6/12</span>
+        <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span>
       </motion.div>
     </div>
   );
 }
 
-function DiaryItem({ entry, onToggleLike, onOpenComments, detail = false }) {
-  if (entry) {
-    const comments = entry.comments || [];
-
-    return (
-      <article className={`diary-item diary-item-created ${detail ? 'diary-item-detail' : ''}`}>
-        <div className="diary-date">
-          <strong>{entry.dateLabel}</strong>
-          {entry.weekday ? <span>· {entry.weekday}</span> : null}
-          <button className="pencil" type="button" aria-label="수정">
-            <img src={assets.pencil} alt="" />
-          </button>
-        </div>
-        <LargePolaroidStack photos={entry.photos} />
-        <div className="diary-body">
-          <div className="writer">
-            <img src={assets.avatar} alt="" />
-            <strong>{entry.nickname}</strong>
-          </div>
-          <p>{entry.text}</p>
-          {entry.location ? (
-            <span className="location-chip">
-              <img src={assets.locationPin} alt="" />{entry.location}에서
-            </span>
-          ) : null}
-        </div>
-        <div className="reaction-bar" aria-label="다이어리 반응">
-          <ReactionButton
-            icon={assets.likeOutline}
-            activeIcon={assets.likeFilled}
-            active={entry.liked}
-            count={detail ? undefined : 1}
-            label="좋아요"
-            onClick={() => onToggleLike(entry.id)}
-            compact={detail}
-          />
-          <ReactionButton icon={assets.comment} count={detail ? undefined : Math.max(1, comments.length)} label="댓글 보기" onClick={() => onOpenComments(entry)} compact={detail} />
-        </div>
-      </article>
-    );
-  }
-
-  return null;
+function normalizeDiaryEntry(entry) {
+  return {
+    ...entry,
+    dateLabel: entry.dateLabel || formatDateLabel(entry.date),
+    weekday: entry.weekday || formatWeekday(entry.date),
+    nickname: entry.nickname || currentMemberNickname,
+    photos: (entry.photos || []).slice(0, 4),
+    text: entry.text || '어떤 하루였나요?',
+    location: entry.location || '',
+    comments: entry.comments || [],
+  };
 }
 
-function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments }) {
+function DiaryCardHeader({ entry }) {
+  return (
+    <div className="diary-date">
+      <strong>{entry.dateLabel}</strong>
+      {entry.weekday ? <span>· {entry.weekday}</span> : null}
+      <button className="pencil" type="button" aria-label="수정">
+        <img src={assets.pencil} alt="" />
+      </button>
+    </div>
+  );
+}
+
+function DiaryCardBody({ entry }) {
+  return (
+    <div className="diary-body">
+      <div className="writer">
+        <img src={assets.avatar} alt="" />
+        <strong>{entry.nickname}</strong>
+      </div>
+      <p>{entry.text}</p>
+      {entry.location ? (
+        <span className="location-chip">
+          <img src={assets.locationPin} alt="" />{entry.location}에서
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = false }) {
+  return (
+    <div className="reaction-bar" aria-label="다이어리 반응">
+      <ReactionButton
+        icon={assets.likeOutline}
+        activeIcon={assets.likeFilled}
+        active={entry.liked}
+        count={detail ? undefined : 1}
+        label="좋아요"
+        onClick={() => onToggleLike(entry.id)}
+        compact={detail}
+      />
+      <ReactionButton icon={assets.comment} count={detail ? undefined : Math.max(1, entry.comments.length)} label="댓글 보기" onClick={() => onOpenComments(entry)} compact={detail} />
+    </div>
+  );
+}
+
+function DiaryListCard({ entry, onToggleLike, onOpenComments }) {
+  const normalizedEntry = normalizeDiaryEntry(entry);
+
+  return (
+    <article className="diary-item diary-item-created diary-item-list-card">
+      <DiaryCardHeader entry={normalizedEntry} />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} />
+      <DiaryCardBody entry={normalizedEntry} />
+      <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
+    </article>
+  );
+}
+
+function DiaryDetailCard({ entry, onToggleLike, onOpenComments }) {
+  const normalizedEntry = normalizeDiaryEntry(entry);
+
+  return (
+    <article className="diary-item diary-item-created diary-item-detail">
+      <DiaryCardHeader entry={normalizedEntry} />
+      <DiaryCardBody entry={normalizedEntry} />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded lockedExpanded />
+      <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} detail />
+    </article>
+  );
+}
+
+function DiaryItem({ entry, onToggleLike, onOpenComments, detail = false }) {
+  if (!entry) return null;
+  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />;
+}
+
+function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, screenPushDistance }) {
   const weekEntries = entries.filter((entry) => entry.weekId === selectedWeek.id);
 
   return (
-    <motion.section className="phone list-screen" {...screenMotionProps('list', transitionKind, active)}>
+    <motion.section className="phone list-screen" {...screenMotionProps('list', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader title={selectedWeek.range} sub={selectedWeek.label} onNavigate={onNavigate} />
       <div className="diary-list">
@@ -724,6 +847,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
         ))}
       </div>
       <UploadButton onNavigate={onNavigate} />
+      <CoveredPageDim visible={transitionKind === 'list-to-comment'} />
     </motion.section>
   );
 }
@@ -750,22 +874,22 @@ function CommentRow({ comment, onToggleCommentLike }) {
   );
 }
 
-function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment }) {
+function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, screenPushDistance }) {
   const [reply, setReply] = useState('');
   const comments = entry?.comments || [];
 
-  function submitReply(event) {
+  async function submitReply(event) {
     event.preventDefault();
     const trimmed = reply.trim();
     if (!trimmed) return;
-    onAddComment(entry.id, trimmed);
+    await onAddComment(entry.id, trimmed);
     setReply('');
   }
 
   if (!entry) return null;
 
   return (
-    <motion.section className="phone comments-screen" {...screenMotionProps('comment', transitionKind, active)}>
+    <motion.section className="phone comments-screen" {...screenMotionProps('comment', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={() => onNavigate('list')} />
       <div className="comment-thread">
@@ -813,13 +937,16 @@ function AnimatedUploadField({ children, order }) {
   );
 }
 
-function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind }) {
+function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance }) {
   const [photos, setPhotos] = useState([]);
   const [date, setDate] = useState(initialDate);
   const [location, setLocation] = useState('');
   const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadPressed, setIsUploadPressed] = useState(false);
   const releaseUploadPress = () => setIsUploadPressed(false);
+  const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
 
   function handleFiles(event) {
     const selected = Array.from(event.target.files || [])
@@ -828,6 +955,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       .map((file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
+        file,
         src: URL.createObjectURL(file),
       }));
 
@@ -835,21 +963,30 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
     event.target.value = '';
   }
 
-  function createDiaryEntry() {
-    onCreateEntry({
-      id: crypto.randomUUID(),
-      weekId: selectedWeek.id,
-      date,
-      dateLabel: formatDateLabel(date),
-      weekday: formatWeekday(date),
-      location: location.trim(),
-      nickname: '정정욱',
-      photos: photos.slice(0, 4),
-      text: text.trim() || '어떤 하루였나요?',
-      liked: false,
-      comments: [],
-    });
-    onNavigate('list');
+  async function createDiaryEntry() {
+    if (isSubmitting) return;
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      await onCreateEntry({
+        weekId: selectedWeek.id,
+        date,
+        dateLabel: formatDateLabel(date),
+        weekday: formatWeekday(date),
+        location: location.trim(),
+        nickname: currentMemberNickname,
+        photos: photos.slice(0, 5),
+        text: text.trim() || '어떤 하루였나요?',
+        liked: false,
+        comments: [],
+      });
+      onNavigate('list');
+    } catch (createError) {
+      setError(createError.message || '일기를 저장하지 못했어요.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleSubmit(event) {
@@ -858,7 +995,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   }
 
   return (
-    <motion.section className="phone upload-screen" {...screenMotionProps('upload', transitionKind)}>
+    <motion.section className="phone upload-screen" {...screenMotionProps('upload', transitionKind, true, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={onNavigate} />
       <motion.div className="upload-content" variants={uploadContentVariants} initial="hidden" animate="visible">
@@ -883,6 +1020,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
               <textarea placeholder="어떤 하루였나요?" value={text} onChange={(event) => setText(event.target.value)} />
             </label>
           </AnimatedUploadField>
+          {error ? <p className="form-error">{error}</p> : null}
         </form>
       </motion.div>
       <div className="bottom-cta">
@@ -890,22 +1028,90 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
           className="primary-upload"
           type="button"
           initial={{ borderRadius: uploadButtonRadius.small, width: uploadButtonSize.small, y: 9.5 }}
-          animate={{ borderRadius: uploadButtonRadius.big, scale: isUploadPressed ? 0.97 : 1, width: uploadButtonSize.big, y: 0 }}
+          animate={{ borderRadius: uploadButtonRadius.big, scale: isUploadPressed ? 0.97 : 1, width: primaryUploadWidth, y: 0 }}
           transition={{ ...uploadButtonTransition, scale: isUploadPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring }}
           onPointerDown={() => setIsUploadPressed(true)}
           onPointerUp={releaseUploadPress}
           onPointerCancel={releaseUploadPress}
           onPointerLeave={releaseUploadPress}
           onClick={createDiaryEntry}
+          disabled={isSubmitting}
         >
           <img src={assets.upload} alt="" />
           <motion.span className="upload-button-label" animate={{ fontSize: 17 }} transition={uploadButtonSizeSpring}>
-            올리기
+            {isSubmitting ? '저장 중' : '올리기'}
           </motion.span>
         </motion.button>
       </div>
     </motion.section>
   );
+}
+
+async function fetchDiaryEntries() {
+  if (!hasSupabaseConfig) return sortEntriesByDate(sampleEntries);
+
+  const { data, error } = await supabase
+    .from('diary_entries')
+    .select(
+      `
+      id,
+      diary_date,
+      location_text,
+      body_text,
+      liked,
+      created_at,
+      couple_members:author_id ( nickname ),
+      diary_images ( id, image_url, storage_path, sort_order ),
+      diary_comments (
+        id,
+        body_text,
+        liked,
+        created_at,
+        couple_members:author_id ( nickname )
+      )
+    `
+    )
+    .eq('space_id', coupleSpaceId)
+    .order('diary_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return sortEntriesByDate((data || []).map(mapDiaryEntry));
+}
+
+async function uploadDiaryPhotos(entryId, photos) {
+  if (!hasSupabaseConfig) {
+    return photos.map((photo, index) => ({
+      entry_id: entryId,
+      image_url: photo.src,
+      storage_path: '',
+      sort_order: index,
+    }));
+  }
+
+  const uploaded = [];
+
+  for (const [index, photo] of photos.entries()) {
+    if (!photo.file) continue;
+    const extension = photo.file.name.split('.').pop() || 'jpg';
+    const storagePath = `${coupleSpaceId}/${entryId}/${index}-${crypto.randomUUID()}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, photo.file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from(storageBucket).getPublicUrl(storagePath);
+    uploaded.push({
+      entry_id: entryId,
+      image_url: data.publicUrl,
+      storage_path: storagePath,
+      sort_order: index,
+    });
+  }
+
+  return uploaded;
 }
 
 export default function App() {
@@ -914,10 +1120,32 @@ export default function App() {
   const [screenTransition, setScreenTransition] = useState('none');
   const [homeMonth, setHomeMonth] = useState(initialMonthStart);
   const [selectedWeek, setSelectedWeek] = useState(initialWeeks[0]);
-  const [entries, setEntries] = useState(sampleEntries);
-  const [selectedEntryId, setSelectedEntryId] = useState(sampleEntries[0]?.id);
-  const homeWeeks = buildMonthWeeks(homeMonth);
+  const [entries, setEntries] = useState([]);
+  const [selectedEntryId, setSelectedEntryId] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const screenPushDistance = useViewportWidth();
+  const homeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(homeMonth), entries), [entries, homeMonth]);
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchDiaryEntries()
+      .then((nextEntries) => {
+        if (!isMounted) return;
+        setEntries(nextEntries);
+        setSelectedEntryId(nextEntries[0]?.id || null);
+        setLoadError('');
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setLoadError(error.message || '일기를 불러오지 못했어요.');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function navigate(nextScreen) {
     setScreenTransition(screen === 'home' && nextScreen === 'list' ? 'home-to-list' : screen === 'list' && nextScreen === 'home' ? 'list-to-home' : screen === 'list' && nextScreen === 'comment' ? 'list-to-comment' : screen === 'comment' && nextScreen === 'list' ? 'comment-to-list' : 'none');
@@ -925,8 +1153,53 @@ export default function App() {
     setScreen(nextScreen);
   }
 
-  function createEntry(entry) {
-    setEntries((current) => [entry, ...current]);
+  async function createEntry(entry) {
+    const entryId = crypto.randomUUID();
+    if (!hasSupabaseConfig) {
+      const savedEntry = {
+        ...entry,
+        id: entryId,
+        weekId: getWeekIdForDate(entry.date),
+        photos: entry.photos.slice(0, 4).map((photo, index) => ({
+          id: photo.id || `${entryId}-${index}`,
+          src: getPhotoSrc(photo),
+        })),
+      };
+      setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+      setSelectedEntryId(entryId);
+      return;
+    }
+
+    const { error: entryError } = await supabase.from('diary_entries').insert({
+      id: entryId,
+      space_id: coupleSpaceId,
+      author_id: currentMemberId,
+      diary_date: entry.date,
+      location_text: entry.location,
+      body_text: entry.text,
+    });
+
+    if (entryError) throw entryError;
+
+    const images = await uploadDiaryPhotos(entryId, entry.photos);
+    if (images.length > 0) {
+      const { error: imagesError } = await supabase.from('diary_images').insert(images);
+      if (imagesError) throw imagesError;
+    }
+
+    const savedEntry = {
+      ...entry,
+      id: entryId,
+      weekId: getWeekIdForDate(entry.date),
+      photos: images.map((image) => ({
+        id: `${entryId}-${image.sort_order}`,
+        src: image.image_url,
+        storagePath: image.storage_path,
+      })),
+    };
+
+    setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+    setSelectedEntryId(entryId);
   }
 
   function changeMonth(direction) {
@@ -943,11 +1216,47 @@ export default function App() {
     navigate('comment');
   }
 
-  function toggleEntryLike(entryId) {
+  async function toggleEntryLike(entryId) {
+    const entry = entries.find((item) => item.id === entryId);
+    if (!entry) return;
+    const nextLiked = !entry.liked;
+    if (!hasSupabaseConfig) {
+      setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked: nextLiked } : entry)));
+      return;
+    }
+
+    const { error } = await supabase.from('diary_entries').update({ liked: nextLiked }).eq('id', entryId);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
     setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked: !entry.liked } : entry)));
   }
 
-  function toggleCommentLike(entryId, commentId) {
+  async function toggleCommentLike(entryId, commentId) {
+    const entry = entries.find((item) => item.id === entryId);
+    const comment = entry?.comments.find((item) => item.id === commentId);
+    if (!comment) return;
+    const nextLiked = !comment.liked;
+    if (!hasSupabaseConfig) {
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.id === entryId
+            ? {
+                ...entry,
+                comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, liked: nextLiked } : comment)),
+              }
+            : entry
+        )
+      );
+      return;
+    }
+
+    const { error } = await supabase.from('diary_comments').update({ liked: nextLiked }).eq('id', commentId);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
     setEntries((current) =>
       current.map((entry) =>
         entry.id === entryId
@@ -960,13 +1269,40 @@ export default function App() {
     );
   }
 
-  function addComment(entryId, text) {
+  async function addComment(entryId, text) {
+    const commentId = crypto.randomUUID();
+    if (!hasSupabaseConfig) {
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.id === entryId
+            ? {
+                ...entry,
+                comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false }, ...(entry.comments || [])],
+              }
+            : entry
+        )
+      );
+      return;
+    }
+
+    const { error } = await supabase.from('diary_comments').insert({
+      id: commentId,
+      entry_id: entryId,
+      author_id: currentMemberId,
+      body_text: text,
+    });
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
     setEntries((current) =>
       current.map((entry) =>
         entry.id === entryId
           ? {
               ...entry,
-              comments: [{ id: crypto.randomUUID(), nickname: '정정욱', text, liked: false }, ...(entry.comments || [])],
+              comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false }, ...(entry.comments || [])],
             }
           : entry
       )
@@ -979,13 +1315,16 @@ export default function App() {
 
   return (
     <div className="screen-stage">
+      {loadError ? <div className="load-error">{loadError}</div> : null}
       {showHome ? (
         <Home
           key="home"
           active={screen === 'home'}
           monthDate={homeMonth}
           weeks={homeWeeks}
+          entries={entries}
           transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
           returningFromUpload={previousScreen === 'upload'}
           onChangeMonth={changeMonth}
           onSelectWeek={openWeek}
@@ -996,6 +1335,7 @@ export default function App() {
           key="list"
           active={screen === 'list'}
           transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
           entries={entries}
           selectedWeek={selectedWeek}
           onNavigate={navigate}
@@ -1008,6 +1348,7 @@ export default function App() {
           key="comment"
           active={screen === 'comment'}
           transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
           entry={selectedEntry}
           onNavigate={navigate}
           onToggleLike={toggleEntryLike}
@@ -1015,7 +1356,7 @@ export default function App() {
           onAddComment={addComment}
         />
       ) : null}
-      {screen === 'upload' ? <Upload key={`upload-${selectedWeek.id}`} transitionKind={screenTransition} initialDate={selectedWeek.startDate} selectedWeek={selectedWeek} onCreateEntry={createEntry} onNavigate={navigate} /> : null}
+      {screen === 'upload' ? <Upload key={`upload-${selectedWeek.id}`} transitionKind={screenTransition} screenPushDistance={screenPushDistance} initialDate={selectedWeek.startDate} selectedWeek={selectedWeek} onCreateEntry={createEntry} onNavigate={navigate} /> : null}
     </div>
   );
 }

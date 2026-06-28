@@ -15,11 +15,22 @@ npm run dev
 ```bash
 VITE_SUPABASE_URL=https://mvdilpzoeaslrhmhplyd.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_COUPLE_SPACE_ID=11111111-1111-4111-8111-111111111111
+VITE_SUPABASE_CURRENT_MEMBER_ID=22222222-2222-4222-8222-222222222221
+VITE_SUPABASE_STORAGE_BUCKET=diary-images
 ```
 
 ## Supabase
 
-Supabase 연결 클라이언트는 `src/lib/supabaseClient.js`에 있습니다. 데이터베이스 테이블, RLS, 정책은 추후 기획에 맞춰 추가합니다.
+Supabase 연결 클라이언트는 `src/lib/supabaseClient.js`에 있습니다.
+
+Supabase SQL Editor에서 `supabase/schema.sql`을 실행하면 아래 리소스가 생성됩니다.
+
+- `couple_spaces`, `couple_members`, `diary_entries`, `diary_images`, `diary_comments`
+- 공개 Storage bucket: `diary-images`
+- 기본 커플 공간과 멤버 2명: `정정욱`, `혜민민`
+
+닉네임 생성 플로우가 아직 없어서 앱의 현재 작성자는 `.env`의 `VITE_SUPABASE_CURRENT_MEMBER_ID`로 고정합니다. 기본값은 `정정욱`입니다.
 
 ## GitHub Pages Deployment
 

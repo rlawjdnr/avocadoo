@@ -1,0 +1,150 @@
+create extension if not exists pgcrypto;
+
+create table if not exists public.couple_spaces (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.couple_members (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid not null references public.couple_spaces(id) on delete cascade,
+  nickname text not null,
+  created_at timestamptz not null default now(),
+  unique (space_id, nickname)
+);
+
+create table if not exists public.diary_entries (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid not null references public.couple_spaces(id) on delete cascade,
+  author_id uuid not null references public.couple_members(id) on delete restrict,
+  diary_date date not null,
+  location_text text,
+  body_text text not null,
+  liked boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.diary_images (
+  id uuid primary key default gen_random_uuid(),
+  entry_id uuid not null references public.diary_entries(id) on delete cascade,
+  image_url text not null,
+  storage_path text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (entry_id, sort_order)
+);
+
+create table if not exists public.diary_comments (
+  id uuid primary key default gen_random_uuid(),
+  entry_id uuid not null references public.diary_entries(id) on delete cascade,
+  author_id uuid not null references public.couple_members(id) on delete restrict,
+  body_text text not null,
+  liked boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.enforce_couple_member_limit()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (
+    select count(*)
+    from public.couple_members
+    where space_id = new.space_id
+      and id <> new.id
+  ) >= 2 then
+    raise exception 'A couple space can have at most two members.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists couple_members_limit on public.couple_members;
+create trigger couple_members_limit
+before insert or update of space_id on public.couple_members
+for each row execute function public.enforce_couple_member_limit();
+
+insert into public.couple_spaces (id, name)
+values ('11111111-1111-4111-8111-111111111111', '아보카도')
+on conflict (id) do update set name = excluded.name;
+
+insert into public.couple_members (id, space_id, nickname)
+values
+  ('22222222-2222-4222-8222-222222222221', '11111111-1111-4111-8111-111111111111', '정정욱'),
+  ('22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111', '혜민민')
+on conflict (id) do update set nickname = excluded.nickname;
+
+alter table public.couple_spaces enable row level security;
+alter table public.couple_members enable row level security;
+alter table public.diary_entries enable row level security;
+alter table public.diary_images enable row level security;
+alter table public.diary_comments enable row level security;
+
+drop policy if exists "public read couple spaces" on public.couple_spaces;
+create policy "public read couple spaces"
+  on public.couple_spaces for select
+  using (true);
+
+drop policy if exists "public read couple members" on public.couple_members;
+create policy "public read couple members"
+  on public.couple_members for select
+  using (true);
+
+drop policy if exists "public read diary entries" on public.diary_entries;
+create policy "public read diary entries"
+  on public.diary_entries for select
+  using (true);
+
+drop policy if exists "public insert diary entries" on public.diary_entries;
+create policy "public insert diary entries"
+  on public.diary_entries for insert
+  with check (true);
+
+drop policy if exists "public update diary entries" on public.diary_entries;
+create policy "public update diary entries"
+  on public.diary_entries for update
+  using (true)
+  with check (true);
+
+drop policy if exists "public read diary images" on public.diary_images;
+create policy "public read diary images"
+  on public.diary_images for select
+  using (true);
+
+drop policy if exists "public insert diary images" on public.diary_images;
+create policy "public insert diary images"
+  on public.diary_images for insert
+  with check (true);
+
+drop policy if exists "public read diary comments" on public.diary_comments;
+create policy "public read diary comments"
+  on public.diary_comments for select
+  using (true);
+
+drop policy if exists "public insert diary comments" on public.diary_comments;
+create policy "public insert diary comments"
+  on public.diary_comments for insert
+  with check (true);
+
+drop policy if exists "public update diary comments" on public.diary_comments;
+create policy "public update diary comments"
+  on public.diary_comments for update
+  using (true)
+  with check (true);
+
+insert into storage.buckets (id, name, public)
+values ('diary-images', 'diary-images', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "public read diary images bucket" on storage.objects;
+create policy "public read diary images bucket"
+  on storage.objects for select
+  using (bucket_id = 'diary-images');
+
+drop policy if exists "public upload diary images bucket" on storage.objects;
+create policy "public upload diary images bucket"
+  on storage.objects for insert
+  with check (bucket_id = 'diary-images');
