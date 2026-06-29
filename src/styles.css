@@ -94,6 +94,12 @@ img {
   inset: 0;
 }
 
+.home-screen,
+.home-screen * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .page-dim {
   position: absolute;
   inset: 0;
@@ -120,7 +126,6 @@ img {
   overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -141,8 +146,6 @@ img {
   flex: 0 0 100vw;
   width: 100vw;
   min-height: 100%;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
 }
 
 .home-header {

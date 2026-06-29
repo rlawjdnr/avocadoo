@@ -262,6 +262,22 @@ function isFutureMonth(monthStart) {
   return monthStart > initialMonthStart;
 }
 
+function buildHomeMonthPages() {
+  const months = [];
+
+  for (let offset = -24; offset <= 0; offset += 1) {
+    const date = addMonths(initialMonthStart, offset);
+    months.push({ key: getMonthKey(date), date });
+  }
+
+  return months;
+}
+
+function getMonthIndex(months, monthDate) {
+  const monthKey = getMonthKey(monthDate);
+  return Math.max(0, months.findIndex((month) => month.key === monthKey));
+}
+
 function getMonthLastDay(monthStart) {
   return new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
 }
@@ -594,21 +610,16 @@ function HomeMonthPage({ weeks, onSelectWeek }) {
   );
 }
 
-function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance }) {
+function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance }) {
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
   const monthGesture = useRef(null);
   const monthAnimation = useRef(null);
-  const monthTrackX = useMotionValue(-screenPushDistance);
-  const [visibleMonthDate, setVisibleMonthDate] = useState(monthDate);
-  const visibleMonthDateRef = useRef(monthDate);
-  const visibleWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(visibleMonthDate), entries), [entries, visibleMonthDate]);
-  const canGoNextMonth = !isFutureMonth(addMonths(visibleMonthDate, 1));
-  const monthPages = [
-    { offset: -1, date: addMonths(visibleMonthDate, -1) },
-    { offset: 0, date: visibleMonthDate },
-    { offset: 1, date: addMonths(visibleMonthDate, 1) },
-  ];
+  const monthPages = useMemo(() => buildHomeMonthPages(), []);
+  const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
+  const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
+  const activeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(activeMonthDate), entries), [activeMonthDate, entries]);
+  const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
 
   function getMonthPageWidth(viewport) {
     return viewport?.clientWidth || screenPushDistance;
@@ -641,31 +652,27 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   }
 
   function resetMonthTrack(viewport) {
-    setMonthTrackPosition(-getMonthPageWidth(viewport));
+    setMonthTrackPosition(-activeMonthIndex * getMonthPageWidth(viewport));
   }
 
   function snapMonthBack(viewport) {
-    animateMonthTrack(-getMonthPageWidth(viewport));
+    animateMonthTrack(-activeMonthIndex * getMonthPageWidth(viewport));
   }
 
-  function moveMonth(direction, viewport) {
-    if (direction > 0 && !canGoNextMonth) {
-      snapMonthBack(viewport);
+  function moveToMonth(nextMonthIndex, viewport, animated = true) {
+    const clampedIndex = Math.min(Math.max(nextMonthIndex, 0), monthPages.length - 1);
+    const targetTrackX = -clampedIndex * getMonthPageWidth(viewport);
+    const nextMonthDate = monthPages[clampedIndex].date;
+
+    setActiveMonthIndex(clampedIndex);
+    onChangeMonth(nextMonthDate);
+
+    if (animated) {
+      animateMonthTrack(targetTrackX);
       return;
     }
 
-    const monthPageWidth = getMonthPageWidth(viewport);
-    const targetTrackX = direction < 0 ? 0 : -monthPageWidth * 2;
-
-    animateMonthTrack(targetTrackX, () => {
-      const nextMonthDate = addMonths(visibleMonthDateRef.current, direction);
-      const nextViewport = monthViewportRef.current;
-
-      visibleMonthDateRef.current = nextMonthDate;
-      monthTrackX.set(-getMonthPageWidth(nextViewport));
-      setVisibleMonthDate(nextMonthDate);
-      onChangeMonth(direction);
-    });
+    setMonthTrackPosition(targetTrackX);
   }
 
   function startMonthGesture(pointerId, x, y, source = 'pointer') {
@@ -702,7 +709,8 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
 
     if (event?.cancelable) event.preventDefault();
     const monthPageWidth = getMonthPageWidth(viewport);
-    const nextTrackX = Math.min(Math.max(gesture.startTrackX + deltaX, -monthPageWidth * 2), 0);
+    const minTrackX = -(monthPages.length - 1) * monthPageWidth;
+    const nextTrackX = Math.min(Math.max(gesture.startTrackX + deltaX, minTrackX), 0);
     monthTrackX.set(nextTrackX);
     return true;
   }
@@ -730,7 +738,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     const isValidSwipe = absX >= getMonthSwipeThreshold(viewport) && absX > absY * 1.25;
 
     if (isValidSwipe) {
-      moveMonth(deltaX > 0 ? -1 : 1, viewport);
+      moveToMonth(activeMonthIndex + (deltaX < 0 ? 1 : -1), viewport);
     } else {
       snapMonthBack(viewport);
     }
@@ -753,10 +761,10 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   }, [screenPushDistance]);
 
   useEffect(() => {
-    if (getMonthKey(monthDate) === getMonthKey(visibleMonthDateRef.current)) return;
-    visibleMonthDateRef.current = monthDate;
-    setVisibleMonthDate(monthDate);
-  }, [monthDate]);
+    const nextMonthIndex = getMonthIndex(monthPages, monthDate);
+    if (nextMonthIndex === activeMonthIndex) return;
+    moveToMonth(nextMonthIndex, monthViewportRef.current, false);
+  }, [monthDate, monthPages]);
 
   function handleMonthPointerDown(event) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -793,7 +801,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   return (
     <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
-      <HomeHeader monthDate={visibleMonthDate} />
+      <HomeHeader monthDate={activeMonthDate} />
       <div
         className="home-month-viewport"
         ref={monthViewportRef}
@@ -803,20 +811,19 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
         onPointerCancel={(event) => finishMonthPointer(event, true)}
       >
         <motion.div
-          key={getMonthKey(visibleMonthDate)}
           className="home-month-track"
           style={{ x: monthTrackX }}
         >
           {monthPages.map((month) => (
             <HomeMonthPage
-              key={getMonthKey(month.date)}
-              weeks={month.offset === 0 ? visibleWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
+              key={month.key}
+              weeks={month.key === getMonthKey(activeMonthDate) ? activeWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
               onSelectWeek={handleSelectWeek}
             />
           ))}
         </motion.div>
       </div>
-      {visibleWeeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(visibleWeeks[0], 'upload')} /> : null}
+      {activeWeeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')} /> : null}
       <CoveredPageDim visible={transitionKind === 'home-to-list'} />
     </motion.section>
   );
@@ -1325,7 +1332,6 @@ export default function App() {
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [loadError, setLoadError] = useState('');
   const screenPushDistance = useViewportWidth();
-  const homeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(homeMonth), entries), [entries, homeMonth]);
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
 
   useEffect(() => {
@@ -1357,10 +1363,7 @@ export default function App() {
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
-      const savedEntry = buildLocalSavedEntry(entry, entryId);
-      setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
-      setSelectedEntryId(entryId);
-      return;
+      throw new Error('Supabase URL 또는 anon key가 설정되지 않아 DB에 저장할 수 없어요. .env.local을 확인해 주세요.');
     }
 
     const { error: entryError } = await supabase.from('diary_entries').insert({
@@ -1372,16 +1375,7 @@ export default function App() {
       body_text: entry.text,
     });
 
-    if (entryError) {
-      if (isMissingSupabaseSchema(entryError)) {
-        const savedEntry = buildLocalSavedEntry(entry, entryId);
-        setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
-        setSelectedEntryId(entryId);
-        return;
-      }
-
-      throw entryError;
-    }
+    if (entryError) throw entryError;
 
     const images = await uploadDiaryPhotos(entryId, entry.photos);
     if (images.length > 0) {
@@ -1395,8 +1389,8 @@ export default function App() {
     setSelectedEntryId(entryId);
   }
 
-  function changeMonth(direction) {
-    setHomeMonth((current) => addMonths(current, direction));
+  function changeMonth(nextMonthDate) {
+    setHomeMonth(nextMonthDate);
   }
 
   function openWeek(week, nextScreen = 'list') {
@@ -1522,7 +1516,6 @@ export default function App() {
           key="home"
           active={screen === 'home'}
           monthDate={homeMonth}
-          weeks={homeWeeks}
           entries={entries}
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
