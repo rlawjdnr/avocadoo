@@ -601,14 +601,16 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   const monthPagingTimer = useRef(null);
   const [monthTrackX, setMonthTrackX] = useState(-screenPushDistance);
   const monthTrackXRef = useRef(-screenPushDistance);
+  const [visibleMonthDate, setVisibleMonthDate] = useState(monthDate);
+  const visibleMonthDateRef = useRef(monthDate);
   const [isMonthDragging, setIsMonthDragging] = useState(false);
   const [isMonthResetting, setIsMonthResetting] = useState(false);
-  const pendingMonthReset = useRef(false);
-  const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
+  const visibleWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(visibleMonthDate), entries), [entries, visibleMonthDate]);
+  const canGoNextMonth = !isFutureMonth(addMonths(visibleMonthDate, 1));
   const monthPages = [
-    { offset: -1, date: addMonths(monthDate, -1) },
-    { offset: 0, date: monthDate },
-    { offset: 1, date: addMonths(monthDate, 1) },
+    { offset: -1, date: addMonths(visibleMonthDate, -1) },
+    { offset: 0, date: visibleMonthDate },
+    { offset: 1, date: addMonths(visibleMonthDate, 1) },
   ];
 
   function getMonthPageWidth(viewport) {
@@ -647,9 +649,15 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     setMonthTrackPosition(targetTrackX);
     window.clearTimeout(monthPagingTimer.current);
     monthPagingTimer.current = window.setTimeout(() => {
+      const nextMonthDate = addMonths(visibleMonthDateRef.current, direction);
       setIsMonthResetting(true);
-      pendingMonthReset.current = true;
+      setMonthTrackPosition(-monthPageWidth);
+      visibleMonthDateRef.current = nextMonthDate;
+      setVisibleMonthDate(nextMonthDate);
       onChangeMonth(direction);
+      window.requestAnimationFrame(() => {
+        setIsMonthResetting(false);
+      });
     }, 320);
   }
 
@@ -728,17 +736,17 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     if (!viewport) return undefined;
 
     resetMonthScroll(viewport);
-    if (pendingMonthReset.current) {
-      pendingMonthReset.current = false;
-      window.requestAnimationFrame(() => {
-        setIsMonthResetting(false);
-      });
-    }
 
     return () => {
       window.clearTimeout(monthPagingTimer.current);
     };
-  }, [monthDate, screenPushDistance]);
+  }, [screenPushDistance]);
+
+  useEffect(() => {
+    if (getMonthKey(monthDate) === getMonthKey(visibleMonthDateRef.current)) return;
+    visibleMonthDateRef.current = monthDate;
+    setVisibleMonthDate(monthDate);
+  }, [monthDate]);
 
   useEffect(() => {
     const viewport = monthViewportRef.current;
@@ -836,7 +844,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   return (
     <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
-      <HomeHeader monthDate={monthDate} />
+      <HomeHeader monthDate={visibleMonthDate} />
       <div
         className="home-month-viewport"
         ref={monthViewportRef}
@@ -849,13 +857,13 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
           {monthPages.map((month) => (
             <HomeMonthPage
               key={getMonthKey(month.date)}
-              weeks={month.offset === 0 ? weeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
+              weeks={month.offset === 0 ? visibleWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
               onSelectWeek={handleSelectWeek}
             />
           ))}
         </motion.div>
       </div>
-      {weeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(weeks[0], 'upload')} /> : null}
+      {visibleWeeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(visibleWeeks[0], 'upload')} /> : null}
       <CoveredPageDim visible={transitionKind === 'home-to-list'} />
     </motion.section>
   );
