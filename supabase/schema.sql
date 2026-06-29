@@ -125,6 +125,11 @@ create policy "public update diary entries"
   using (true)
   with check (true);
 
+drop policy if exists "public delete diary entries" on public.diary_entries;
+create policy "public delete diary entries"
+  on public.diary_entries for delete
+  using (true);
+
 drop policy if exists "public read diary images" on public.diary_images;
 create policy "public read diary images"
   on public.diary_images for select
@@ -134,6 +139,11 @@ drop policy if exists "public insert diary images" on public.diary_images;
 create policy "public insert diary images"
   on public.diary_images for insert
   with check (true);
+
+drop policy if exists "public delete diary images" on public.diary_images;
+create policy "public delete diary images"
+  on public.diary_images for delete
+  using (true);
 
 drop policy if exists "public read diary comments" on public.diary_comments;
 create policy "public read diary comments"

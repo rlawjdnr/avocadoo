@@ -97,6 +97,8 @@ const screenPushTransition = {
 };
 
 const defaultScreenPushDistance = 390;
+const maxUploadPhotos = 6;
+const uploadGridColumnCount = 3;
 const uploadFieldSpring = {
   type: 'spring',
   stiffness: 480,
@@ -118,6 +120,22 @@ const uploadFieldVariants = {
       delay: order * 0.03,
     },
   }),
+};
+
+const editModalMotion = {
+  initial: { opacity: 0, y: 100 },
+  animate: { opacity: 1, y: 0 },
+  transition: {
+    y: {
+      type: 'spring',
+      stiffness: 480,
+      damping: 50,
+    },
+    opacity: {
+      duration: 0.2,
+      ease: [0, 0, 0.2, 1],
+    },
+  },
 };
 
 const largePolaroidRest = [
@@ -227,6 +245,30 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
     }
   }
 
+  if (transitionKind === 'list-to-edit' || transitionKind === 'comment-to-edit') {
+    if (screenName === 'list' || screenName === 'comment') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'edit') {
+      return {
+        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
+        animate: { x: 0, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'edit-to-list' || transitionKind === 'edit-to-comment') {
+    if (screenName === 'list' || screenName === 'comment') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'edit') {
+      return {
+        initial: { boxShadow: coveringPageShadow },
+        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
   return { animate: { x: active ? 0 : screenPushDistance }, style: { zIndex: active ? 2 : 1 }, transition: { duration: 0 } };
 }
 
@@ -301,6 +343,7 @@ function buildMonthWeeks(monthStart) {
       range: `${monthNumber}월 ${startDay}일 - ${endDay}일`,
       label: weekLabels[index] || `${index + 1}번째 주`,
       startDate: toDateInputValue(startDate),
+      endDate: toDateInputValue(new Date(monthStart.getFullYear(), monthStart.getMonth(), endDay)),
       isFuture: false,
       photos: [],
     });
@@ -333,6 +376,7 @@ const sampleEntries = [
     location: '건대입구',
     liked: true,
     likeCount: 1,
+    commentCount: 1,
     comments: [{ id: 'sample-comment-1', nickname: '정정욱', text: '좋았던 하루!', liked: false, likeCount: 0 }],
   },
   {
@@ -350,6 +394,7 @@ const sampleEntries = [
     location: '건대입구',
     liked: false,
     likeCount: 0,
+    commentCount: 0,
     comments: [],
   },
 ];
@@ -417,6 +462,7 @@ function mapDiaryEntry(row) {
     location: row.location_text || '',
     liked: entryLikes.some((like) => like.member_id === currentMemberId),
     likeCount: entryLikes.length,
+    commentCount: comments.length,
     comments,
   };
 }
@@ -555,15 +601,57 @@ function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBi
   );
 }
 
-function HomeHeader({ monthDate }) {
+function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth }) {
+  const [isPressed, setIsPressed] = useState(false);
+  const monthInputRef = useRef(null);
+  const releasePress = () => setIsPressed(false);
+
+  function openMonthPicker() {
+    const input = monthInputRef.current;
+    if (!input) return;
+
+    input.focus({ preventScroll: true });
+    try {
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input.click();
+      }
+    } catch {
+      input.click();
+    }
+  }
+
   return (
     <header className="home-header">
-      <button className="month-select" type="button">
+      <motion.button
+        className="month-select"
+        type="button"
+        initial={false}
+        animate={{ scale: isPressed ? 0.98 : 1 }}
+        transition={isPressed ? polaroidPressSpring : polaroidReleaseSpring}
+        onPointerDown={() => setIsPressed(true)}
+        onPointerUp={releasePress}
+        onPointerCancel={releasePress}
+        onPointerLeave={releasePress}
+        onClick={openMonthPicker}
+      >
         <span>{monthDate.getFullYear()}년</span>
         <strong>
           {monthDate.getMonth() + 1}월 <img src={assets.down} alt="" />
         </strong>
-      </button>
+        <input
+          ref={monthInputRef}
+          className="month-picker-input"
+          type="month"
+          value={getMonthKey(monthDate)}
+          min={minMonth}
+          max={maxMonth}
+          aria-label="월 선택"
+          tabIndex={-1}
+          onChange={(event) => onSelectMonth(event.target.value)}
+        />
+      </motion.button>
       <div className="couple-state" aria-label="커플 상태">
         <img src={assets.avatar} alt="" />
         <img src={assets.avatar} alt="" />
@@ -587,7 +675,7 @@ function HomeMonthPage({ weeks, onSelectWeek }) {
                 <strong>{week.range}</strong>
                 <em>{week.label}</em>
               </span>
-              <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload')} />
+              <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload', 'add-polaroid')} />
             </>
           );
 
@@ -796,15 +884,26 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     finishMonthGesture(event.pointerId, event.clientX, event.clientY, cancelled);
   }
 
-  function handleSelectWeek(week, nextScreen = 'list') {
+  function handleSelectWeek(week, nextScreen = 'list', source = '') {
     if (dragBlockedClick.current) return;
-    onSelectWeek(week, nextScreen);
+    onSelectWeek(week, nextScreen, source);
+  }
+
+  function handleSelectMonth(monthValue) {
+    const nextMonthIndex = monthPages.findIndex((month) => month.key === monthValue);
+    if (nextMonthIndex < 0) return;
+    moveToMonth(nextMonthIndex, monthViewportRef.current);
   }
 
   return (
     <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
-      <HomeHeader monthDate={activeMonthDate} />
+      <HomeHeader
+        monthDate={activeMonthDate}
+        minMonth={monthPages[0]?.key}
+        maxMonth={monthPages[monthPages.length - 1]?.key}
+        onSelectMonth={handleSelectMonth}
+      />
       <div
         className="home-month-viewport"
         ref={monthViewportRef}
@@ -928,24 +1027,38 @@ function normalizeDiaryEntry(entry) {
     text: entry.text || '어떤 하루였나요?',
     location: entry.location || '',
     comments: entry.comments || [],
+    commentCount: typeof entry.commentCount === 'number' ? entry.commentCount : (entry.comments || []).length,
   };
 }
 
-function DiaryCardHeader({ entry }) {
+function DiaryCardHeader({ entry, onEdit }) {
   return (
     <div className="diary-date">
       <strong>{entry.dateLabel}</strong>
       {entry.weekday ? <span>· {entry.weekday}</span> : null}
-      <button className="pencil" type="button" aria-label="수정">
+      <button className="pencil" type="button" aria-label="수정" onClick={() => onEdit?.(entry)}>
         <img src={assets.pencil} alt="" />
       </button>
     </div>
   );
 }
 
-function DiaryCardBody({ entry }) {
+function DiaryCardBody({ entry, onOpen }) {
+  const bodyProps = onOpen
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: () => onOpen(entry),
+        onKeyDown: (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onOpen(entry);
+        },
+      }
+    : {};
+
   return (
-    <div className="diary-body">
+    <div className={onOpen ? 'diary-body diary-body-clickable' : 'diary-body'} {...bodyProps}>
       <div className="writer">
         <img src={assets.avatar} alt="" />
         <strong>{entry.nickname}</strong>
@@ -967,35 +1080,35 @@ function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = fals
         icon={assets.likeOutline}
         activeIcon={assets.likeFilled}
         active={entry.liked}
-        count={detail ? undefined : entry.likeCount || 0}
+        count={entry.likeCount || 0}
         label="좋아요"
         onClick={() => onToggleLike(entry.id)}
-        compact={detail}
+        compact={false}
       />
-      <ReactionButton icon={assets.comment} count={detail ? undefined : Math.max(1, entry.comments.length)} label="댓글 보기" onClick={() => onOpenComments(entry)} compact={detail} />
+      <ReactionButton icon={assets.comment} count={entry.commentCount || 0} label="댓글 보기" onClick={() => onOpenComments(entry)} compact={false} />
     </div>
   );
 }
 
-function DiaryListCard({ entry, onToggleLike, onOpenComments }) {
+function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
 
   return (
     <article className="diary-item diary-item-created diary-item-list-card">
-      <DiaryCardHeader entry={normalizedEntry} />
+      <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
       <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} />
-      <DiaryCardBody entry={normalizedEntry} />
+      <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
     </article>
   );
 }
 
-function DiaryDetailCard({ entry, onToggleLike, onOpenComments }) {
+function DiaryDetailCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
 
   return (
     <article className="diary-item diary-item-created diary-item-detail">
-      <DiaryCardHeader entry={normalizedEntry} />
+      <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
       <DiaryCardBody entry={normalizedEntry} />
       <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded lockedExpanded />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} detail />
@@ -1003,12 +1116,12 @@ function DiaryDetailCard({ entry, onToggleLike, onOpenComments }) {
   );
 }
 
-function DiaryItem({ entry, onToggleLike, onOpenComments, detail = false }) {
+function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false }) {
   if (!entry) return null;
-  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />;
+  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} />;
 }
 
-function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, screenPushDistance }) {
+function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance }) {
   const weekEntries = entries.filter((entry) => entry.weekId === selectedWeek.id);
 
   return (
@@ -1017,7 +1130,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
       <NavHeader title={selectedWeek.range} sub={selectedWeek.label} onNavigate={onNavigate} />
       <div className="diary-list">
         {weekEntries.map((entry) => (
-          <DiaryItem key={entry.id} entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
+          <DiaryItem key={entry.id} entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEditEntry} />
         ))}
       </div>
       <UploadButton onNavigate={onNavigate} />
@@ -1048,7 +1161,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
   );
 }
 
-function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, screenPushDistance }) {
+function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance }) {
   const [reply, setReply] = useState('');
   const comments = entry?.comments || [];
 
@@ -1067,7 +1180,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={() => onNavigate('list')} />
       <div className="comment-thread">
-        <DiaryItem entry={entry} detail onToggleLike={onToggleLike} onOpenComments={() => {}} />
+        <DiaryItem entry={entry} detail onToggleLike={onToggleLike} onOpenComments={() => {}} onEdit={onEditEntry} />
         <div className="comments-list">
           {comments.map((comment) => (
             <CommentRow key={comment.id} comment={comment} onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)} />
@@ -1088,17 +1201,22 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
 }
 
 function UploadGrid({ photos, onFiles, onRemovePhoto }) {
-  const variants = ['left', 'center', 'right', 'center', 'right'];
+  const variants = ['left', 'center', 'right', 'center', 'right', 'left'];
+  const canAddPhoto = photos.length < maxUploadPhotos;
+  const visibleCellCount = photos.length + (canAddPhoto ? 1 : 0);
+  const rowCount = Math.ceil(visibleCellCount / uploadGridColumnCount) || 1;
 
   return (
-    <div className="upload-grid">
+    <div className="upload-grid" data-rows={rowCount}>
       {photos.map((photo, index) => (
         <ImagePolaroid key={photo.id} photo={photo} variant={variants[index] || 'center'} onRemove={() => onRemovePhoto(photo.id)} />
       ))}
-      <label className="upload-add-control" aria-label="이미지 첨부">
-        <ImagePolaroid add />
-        <input type="file" accept="image/*" multiple onChange={onFiles} />
-      </label>
+      {canAddPhoto ? (
+        <label className="upload-add-control" aria-label="이미지 첨부">
+          <ImagePolaroid add />
+          <input type="file" accept="image/*" multiple onChange={onFiles} />
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -1111,7 +1229,11 @@ function AnimatedUploadField({ children, order }) {
   );
 }
 
-function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance }) {
+function StaticUploadField({ children }) {
+  return <div>{children}</div>;
+}
+
+function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance, autoOpenDatePicker = false, onDatePickerAutoOpened }) {
   const [photos, setPhotos] = useState([]);
   const [date, setDate] = useState(initialDate);
   const [location, setLocation] = useState('');
@@ -1119,13 +1241,41 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadPressed, setIsUploadPressed] = useState(false);
+  const dateInputRef = useRef(null);
+  const didAutoOpenDatePicker = useRef(false);
   const releaseUploadPress = () => setIsUploadPressed(false);
   const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
+  const uploadGridRows = Math.ceil((photos.length + (photos.length < maxUploadPhotos ? 1 : 0)) / uploadGridColumnCount) || 1;
+
+  useEffect(() => {
+    if (!autoOpenDatePicker || didAutoOpenDatePicker.current) return undefined;
+    didAutoOpenDatePicker.current = true;
+
+    let frameId = 0;
+    frameId = window.requestAnimationFrame(() => {
+      const input = dateInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      try {
+        if (typeof input.showPicker === 'function') {
+          input.showPicker();
+        } else {
+          input.click();
+        }
+      } catch {
+        input.click();
+      } finally {
+        onDatePickerAutoOpened?.();
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [autoOpenDatePicker, onDatePickerAutoOpened]);
 
   function handleFiles(event) {
     const selected = Array.from(event.target.files || [])
       .filter((file) => file.type.startsWith('image/'))
-      .slice(0, Math.max(0, 5 - photos.length))
+      .slice(0, Math.max(0, maxUploadPhotos - photos.length))
       .map((file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
@@ -1133,7 +1283,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         src: URL.createObjectURL(file),
       }));
 
-    if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, 5));
+    if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
     event.target.value = '';
   }
 
@@ -1158,10 +1308,11 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         weekday: formatWeekday(date),
         location: location.trim(),
         nickname: currentMemberNickname,
-        photos: photos.slice(0, 5),
+        photos: photos.slice(0, maxUploadPhotos),
         text: text.trim() || '어떤 하루였나요?',
         liked: false,
         likeCount: 0,
+        commentCount: 0,
         comments: [],
       });
       onNavigate('list');
@@ -1181,7 +1332,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
     <motion.section className="phone upload-screen" {...screenMotionProps('upload', transitionKind, true, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={onNavigate} />
-      <motion.div className="upload-content" variants={uploadContentVariants} initial="hidden" animate="visible">
+      <motion.div className="upload-content" data-grid-rows={uploadGridRows} variants={uploadContentVariants} initial="hidden" animate="visible">
         <AnimatedUploadField order={0}>
           <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} />
         </AnimatedUploadField>
@@ -1189,7 +1340,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
           <AnimatedUploadField order={1}>
             <label className="form-row">
               <span>날짜</span>
-              <input className="form-input date-input" type="text" value={date} onChange={(event) => setDate(event.target.value)} placeholder="날짜" aria-label="날짜" />
+              <input ref={dateInputRef} className="form-input date-input" type="date" value={date} min={selectedWeek.startDate} max={selectedWeek.endDate || selectedWeek.startDate} onChange={(event) => setDate(event.target.value)} placeholder="날짜" aria-label="날짜" />
             </label>
           </AnimatedUploadField>
           <AnimatedUploadField order={2}>
@@ -1226,6 +1377,174 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
           </motion.span>
         </motion.button>
       </div>
+    </motion.section>
+  );
+}
+
+function EditHeader({ onBack, onDelete }) {
+  return (
+    <header className="nav-header edit-nav-header">
+      <div className="nav-row edit-nav-row">
+        <button className="icon-back" type="button" onClick={onBack} aria-label="뒤로" />
+        <button className="edit-delete-button" type="button" onClick={onDelete}>
+          삭제하기
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function LeaveEditModal({ onCancel, onLeave }) {
+  return (
+    <div className="edit-modal-layer" role="presentation">
+      <motion.section className="edit-leave-modal" role="dialog" aria-modal="true" aria-labelledby="leave-edit-title" {...editModalMotion}>
+        <div className="edit-modal-copy">
+          <strong id="leave-edit-title">나가시겠어요?</strong>
+          <p>수정사항이 저장되지 않아요.</p>
+        </div>
+        <div className="edit-modal-actions">
+          <button className="edit-modal-button edit-modal-cancel" type="button" onClick={onCancel}>
+            취소
+          </button>
+          <button className="edit-modal-button edit-modal-leave" type="button" onClick={onLeave}>
+            나가기
+          </button>
+        </div>
+      </motion.section>
+    </div>
+  );
+}
+
+function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUpdateEntry, onDeleteEntry }) {
+  const normalizedEntry = normalizeDiaryEntry(entry);
+  const [photos, setPhotos] = useState(() => normalizedEntry.photos.map((photo) => ({ ...photo, src: getPhotoSrc(photo) })));
+  const [date, setDate] = useState(normalizedEntry.date);
+  const [location, setLocation] = useState(normalizedEntry.location);
+  const [text, setText] = useState(normalizedEntry.text);
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isSavePressed, setIsSavePressed] = useState(false);
+  const releaseSavePress = () => setIsSavePressed(false);
+  const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
+  const uploadGridRows = Math.ceil((photos.length + (photos.length < maxUploadPhotos ? 1 : 0)) / uploadGridColumnCount) || 1;
+
+  function handleFiles(event) {
+    const selected = Array.from(event.target.files || [])
+      .filter((file) => file.type.startsWith('image/'))
+      .slice(0, Math.max(0, maxUploadPhotos - photos.length))
+      .map((file) => ({
+        id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+        name: file.name,
+        file,
+        src: URL.createObjectURL(file),
+      }));
+
+    if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
+    event.target.value = '';
+  }
+
+  function removePhoto(photoId) {
+    setPhotos((current) => {
+      const removed = current.find((photo) => photo.id === photoId);
+      if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
+      return current.filter((photo) => photo.id !== photoId);
+    });
+  }
+
+  async function saveEntry() {
+    if (isSubmitting) return;
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      await onUpdateEntry(entry.id, {
+        date,
+        dateLabel: formatDateLabel(date),
+        weekday: formatWeekday(date),
+        location: location.trim(),
+        text: text.trim() || '어떤 하루였나요?',
+        photos: photos.slice(0, maxUploadPhotos),
+      });
+      onNavigate('list');
+    } catch (updateError) {
+      setError(updateError.message || '일기를 수정하지 못했어요.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function deleteEntry() {
+    if (isSubmitting) return;
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      await onDeleteEntry(entry.id);
+      onNavigate('list');
+    } catch (deleteError) {
+      setError(deleteError.message || '일기를 삭제하지 못했어요.');
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <motion.section className="phone upload-screen edit-screen" {...screenMotionProps('edit', transitionKind, true, screenPushDistance)}>
+      <img className="paper-bg" src={assets.bg} alt="" />
+      <EditHeader onBack={() => setIsDeleteModalOpen(true)} onDelete={deleteEntry} />
+      <div className="upload-content edit-content" data-grid-rows={uploadGridRows}>
+        <StaticUploadField>
+          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} />
+        </StaticUploadField>
+        <form
+          className="entry-form"
+          id="edit-entry-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveEntry();
+          }}
+        >
+          <StaticUploadField>
+            <label className="form-row">
+              <span>날짜</span>
+              <input className="form-input date-input" type="text" value={date} onChange={(event) => setDate(event.target.value)} placeholder="날짜 선택" aria-label="날짜" />
+            </label>
+          </StaticUploadField>
+          <StaticUploadField>
+            <label className="form-row">
+              <span>위치</span>
+              <input className="form-input location-input" type="text" value={location} onChange={(event) => setLocation(event.target.value)} placeholder="위치" aria-label="위치" />
+            </label>
+          </StaticUploadField>
+          <StaticUploadField>
+            <label className="memo-field">
+              <textarea placeholder="어떤 하루였나요?" value={text} onChange={(event) => setText(event.target.value)} />
+            </label>
+          </StaticUploadField>
+          {error ? <p className="form-error">{error}</p> : null}
+        </form>
+      </div>
+      <div className="bottom-cta">
+        <motion.button
+          className="primary-upload"
+          type="button"
+          initial={{ borderRadius: uploadButtonRadius.small, width: uploadButtonSize.small, y: 9.5 }}
+          animate={{ borderRadius: uploadButtonRadius.big, scale: isSavePressed ? 0.97 : 1, width: primaryUploadWidth, y: 0 }}
+          transition={{ ...uploadButtonTransition, scale: isSavePressed ? uploadButtonPressSpring : uploadButtonReleaseSpring }}
+          onPointerDown={() => setIsSavePressed(true)}
+          onPointerUp={releaseSavePress}
+          onPointerCancel={releaseSavePress}
+          onPointerLeave={releaseSavePress}
+          onClick={saveEntry}
+          disabled={isSubmitting}
+        >
+          <img src={assets.upload} alt="" />
+          <motion.span className="upload-button-label" animate={{ fontSize: 17 }} transition={uploadButtonSizeSpring}>
+            {isSubmitting ? '저장 중' : '올리기'}
+          </motion.span>
+        </motion.button>
+      </div>
+      {isDeleteModalOpen ? <LeaveEditModal onCancel={() => setIsDeleteModalOpen(false)} onLeave={() => onNavigate('list')} /> : null}
     </motion.section>
   );
 }
@@ -1315,6 +1634,26 @@ async function uploadDiaryPhotos(entryId, photos) {
   return uploaded;
 }
 
+async function buildPersistedDiaryPhotos(entryId, photos) {
+  const newUploads = await uploadDiaryPhotos(entryId, photos);
+  let uploadIndex = 0;
+
+  return photos.slice(0, maxUploadPhotos).map((photo, index) => {
+    if (photo.file) {
+      const uploaded = newUploads[uploadIndex];
+      uploadIndex += 1;
+      return { ...uploaded, sort_order: index };
+    }
+
+    return {
+      entry_id: entryId,
+      image_url: getPhotoSrc(photo),
+      storage_path: photo.storagePath || photo.storage_path || '',
+      sort_order: index,
+    };
+  });
+}
+
 function buildLocalSavedEntry(entry, entryId, images) {
   const localImages =
     images ||
@@ -1341,9 +1680,26 @@ function addLocalCommentToEntries(entries, entryId, comment) {
     entry.id === entryId
       ? {
           ...entry,
+          commentCount: (typeof entry.commentCount === 'number' ? entry.commentCount : (entry.comments || []).length) + 1,
           comments: [comment, ...(entry.comments || [])],
         }
       : entry
+  );
+}
+
+function updateLocalEntry(entries, entryId, changes) {
+  return sortEntriesByDate(
+    entries.map((entry) =>
+      entry.id === entryId
+        ? {
+            ...entry,
+            ...changes,
+            weekId: getWeekIdForDate(changes.date || entry.date),
+            dateLabel: formatDateLabel(changes.date || entry.date),
+            weekday: formatWeekday(changes.date || entry.date),
+          }
+        : entry
+    )
   );
 }
 
@@ -1355,6 +1711,7 @@ export default function App() {
   const [selectedWeek, setSelectedWeek] = useState(initialWeeks[0]);
   const [entries, setEntries] = useState([]);
   const [selectedEntryId, setSelectedEntryId] = useState(null);
+  const [shouldOpenUploadDatePicker, setShouldOpenUploadDatePicker] = useState(false);
   const [loadError, setLoadError] = useState('');
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
@@ -1380,7 +1737,25 @@ export default function App() {
   }, []);
 
   function navigate(nextScreen) {
-    setScreenTransition(screen === 'home' && nextScreen === 'list' ? 'home-to-list' : screen === 'list' && nextScreen === 'home' ? 'list-to-home' : screen === 'list' && nextScreen === 'comment' ? 'list-to-comment' : screen === 'comment' && nextScreen === 'list' ? 'comment-to-list' : 'none');
+    setScreenTransition(
+      screen === 'home' && nextScreen === 'list'
+        ? 'home-to-list'
+        : screen === 'list' && nextScreen === 'home'
+          ? 'list-to-home'
+          : screen === 'list' && nextScreen === 'comment'
+            ? 'list-to-comment'
+            : screen === 'comment' && nextScreen === 'list'
+              ? 'comment-to-list'
+              : screen === 'list' && nextScreen === 'edit'
+                ? 'list-to-edit'
+                : screen === 'comment' && nextScreen === 'edit'
+                  ? 'comment-to-edit'
+                  : screen === 'edit' && nextScreen === 'comment'
+                    ? 'edit-to-comment'
+                    : screen === 'edit' && nextScreen === 'list'
+                      ? 'edit-to-list'
+                      : 'none'
+    );
     setPreviousScreen(screen);
     setScreen(nextScreen);
   }
@@ -1418,14 +1793,20 @@ export default function App() {
     setHomeMonth(nextMonthDate);
   }
 
-  function openWeek(week, nextScreen = 'list') {
+  function openWeek(week, nextScreen = 'list', source = '') {
     setSelectedWeek(week);
+    setShouldOpenUploadDatePicker(nextScreen === 'upload' && source === 'add-polaroid');
     navigate(nextScreen);
   }
 
   function openComments(entry) {
     setSelectedEntryId(entry.id);
     navigate('comment');
+  }
+
+  function openEditEntry(entry) {
+    setSelectedEntryId(entry.id);
+    navigate('edit');
   }
 
   async function toggleEntryLike(entryId) {
@@ -1518,9 +1899,68 @@ export default function App() {
     setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
   }
 
+  async function updateEntry(entryId, changes) {
+    const entry = entries.find((item) => item.id === entryId);
+    if (!entry) return;
+
+    const nextPhotos = changes.photos.slice(0, maxUploadPhotos).map((photo, index) => ({
+      id: photo.id || `${entryId}-${index}`,
+      src: getPhotoSrc(photo),
+      storagePath: photo.storagePath || photo.storage_path || '',
+      file: photo.file,
+    }));
+
+    if (!hasSupabaseConfig) {
+      setEntries((current) => updateLocalEntry(current, entryId, { ...changes, photos: nextPhotos }));
+      return;
+    }
+
+    const { error: entryError } = await supabase
+      .from('diary_entries')
+      .update({
+        diary_date: changes.date,
+        location_text: changes.location,
+        body_text: changes.text,
+      })
+      .eq('id', entryId);
+
+    if (entryError) throw entryError;
+
+    const persistedPhotos = await buildPersistedDiaryPhotos(entryId, changes.photos);
+    const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
+    if (deleteImagesError && !isMissingSupabaseSchema(deleteImagesError)) throw deleteImagesError;
+
+    if (persistedPhotos.length > 0) {
+      const { error: insertImagesError } = await supabase.from('diary_images').insert(persistedPhotos);
+      if (insertImagesError && !isMissingSupabaseSchema(insertImagesError)) throw insertImagesError;
+    }
+
+    const savedPhotos = persistedPhotos.map((photo, index) => ({
+      id: `${entryId}-${index}`,
+      src: photo.image_url,
+      storagePath: photo.storage_path,
+    }));
+
+    setEntries((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
+  }
+
+  async function deleteEntry(entryId) {
+    if (!hasSupabaseConfig) {
+      setEntries((current) => current.filter((entry) => entry.id !== entryId));
+      setSelectedEntryId(null);
+      return;
+    }
+
+    const { error } = await supabase.from('diary_entries').delete().eq('id', entryId);
+    if (error) throw error;
+    setEntries((current) => current.filter((entry) => entry.id !== entryId));
+    setSelectedEntryId(null);
+  }
+
   const showHome = screen === 'home' || screenTransition === 'home-to-list';
-  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list';
-  const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list';
+  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
+  const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
+  const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
 
   return (
     <div className="screen-stage">
@@ -1549,6 +1989,7 @@ export default function App() {
           onNavigate={navigate}
           onToggleLike={toggleEntryLike}
           onOpenComments={openComments}
+          onEditEntry={openEditEntry}
         />
       ) : null}
       {showComments ? (
@@ -1562,9 +2003,33 @@ export default function App() {
           onToggleLike={toggleEntryLike}
           onToggleCommentLike={toggleCommentLike}
           onAddComment={addComment}
+          onEditEntry={openEditEntry}
         />
       ) : null}
-      {screen === 'upload' ? <Upload key={`upload-${selectedWeek.id}`} transitionKind={screenTransition} screenPushDistance={screenPushDistance} initialDate={selectedWeek.startDate} selectedWeek={selectedWeek} onCreateEntry={createEntry} onNavigate={navigate} /> : null}
+      {showEdit && selectedEntry ? (
+        <EditEntry
+          key={`edit-${selectedEntry.id}`}
+          transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
+          entry={selectedEntry}
+          onNavigate={navigate}
+          onUpdateEntry={updateEntry}
+          onDeleteEntry={deleteEntry}
+        />
+      ) : null}
+      {screen === 'upload' ? (
+        <Upload
+          key={`upload-${selectedWeek.id}`}
+          transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
+          initialDate={selectedWeek.startDate}
+          selectedWeek={selectedWeek}
+          autoOpenDatePicker={shouldOpenUploadDatePicker}
+          onDatePickerAutoOpened={() => setShouldOpenUploadDatePicker(false)}
+          onCreateEntry={createEntry}
+          onNavigate={navigate}
+        />
+      ) : null}
     </div>
   );
 }
