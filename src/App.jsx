@@ -534,6 +534,16 @@ function sortEntriesByDate(entries) {
   return entries.slice().sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
 }
 
+function groupBy(items, getKey) {
+  return items.reduce((groups, item) => {
+    const key = getKey(item);
+    const group = groups.get(key) || [];
+    group.push(item);
+    groups.set(key, group);
+    return groups;
+  }, new Map());
+}
+
 function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, isLast = true, onRemove }) {
   const src = getPhotoSrc(photo);
 
@@ -1605,33 +1615,94 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
 async function fetchDiaryEntries() {
   if (!hasSupabaseConfig) return readLocalEntries();
 
-  const { data, error } = await supabase
+  const { data: entryRows, error: entriesError } = await supabase
     .from('diary_entries')
-    .select(
-      `
-      id,
-      diary_date,
-      location_text,
-      body_text,
-      created_at,
-      couple_members:author_id ( nickname ),
-      diary_images ( id, image_url, storage_path, sort_order ),
-      diary_entry_likes ( member_id ),
-      diary_comments (
-        id,
-        body_text,
-        created_at,
-        couple_members:author_id ( nickname ),
-        diary_comment_likes ( member_id )
-      )
-    `
-    )
+    .select('id, author_id, diary_date, location_text, body_text, created_at')
     .eq('space_id', coupleSpaceId)
     .order('diary_date', { ascending: false })
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
-  return sortEntriesByDate((data || []).map(mapDiaryEntry));
+  if (entriesError) throw entriesError;
+  const entries = entryRows || [];
+  const entryIds = entries.map((entry) => entry.id);
+  if (entryIds.length === 0) return [];
+
+  const [
+    { data: images = [], error: imagesError },
+    { data: entryLikes = [], error: entryLikesError },
+    { data: comments = [], error: commentsError },
+  ] = await Promise.all([
+    supabase.from('diary_images').select('id, entry_id, image_url, storage_path, sort_order').in('entry_id', entryIds),
+    supabase.from('diary_entry_likes').select('entry_id, member_id').in('entry_id', entryIds),
+    supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds),
+  ]);
+
+  if (imagesError) throw imagesError;
+  if (entryLikesError) throw entryLikesError;
+  if (commentsError) throw commentsError;
+
+  const commentIds = comments.map((comment) => comment.id);
+  const { data: commentLikes = [], error: commentLikesError } = commentIds.length > 0
+    ? await supabase.from('diary_comment_likes').select('comment_id, member_id').in('comment_id', commentIds)
+    : { data: [], error: null };
+
+  if (commentLikesError) throw commentLikesError;
+
+  const memberIds = Array.from(new Set([...entries.map((entry) => entry.author_id), ...comments.map((comment) => comment.author_id)].filter(Boolean)));
+  const { data: members = [], error: membersError } = memberIds.length > 0
+    ? await supabase.from('couple_members').select('id, nickname').in('id', memberIds)
+    : { data: [], error: null };
+
+  if (membersError) throw membersError;
+
+  const membersById = new Map(members.map((member) => [member.id, member.nickname]));
+  const imagesByEntry = groupBy(images, (image) => image.entry_id);
+  const likesByEntry = groupBy(entryLikes, (like) => like.entry_id);
+  const commentsByEntry = groupBy(comments, (comment) => comment.entry_id);
+  const likesByComment = groupBy(commentLikes, (like) => like.comment_id);
+
+  return sortEntriesByDate(
+    entries.map((entry) => {
+      const entryImages = (imagesByEntry.get(entry.id) || [])
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((image) => ({
+          id: image.id,
+          src: image.image_url,
+          storagePath: image.storage_path,
+        }));
+      const likes = likesByEntry.get(entry.id) || [];
+      const entryComments = (commentsByEntry.get(entry.id) || [])
+        .slice()
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .map((comment) => {
+          const likes = likesByComment.get(comment.id) || [];
+          return {
+            id: comment.id,
+            nickname: membersById.get(comment.author_id) || currentMemberNickname,
+            text: comment.body_text,
+            liked: likes.some((like) => like.member_id === currentMemberId),
+            likeCount: likes.length,
+          };
+        });
+
+      return {
+        id: entry.id,
+        weekId: getWeekIdForDate(entry.diary_date),
+        date: entry.diary_date,
+        dateLabel: formatDateLabel(entry.diary_date),
+        weekday: formatWeekday(entry.diary_date),
+        nickname: membersById.get(entry.author_id) || currentMemberNickname,
+        photos: entryImages,
+        text: entry.body_text,
+        location: entry.location_text || '',
+        liked: likes.some((like) => like.member_id === currentMemberId),
+        likeCount: likes.length,
+        commentCount: entryComments.length,
+        comments: entryComments,
+      };
+    })
+  );
 }
 
 function isMissingSupabaseSchema(error) {
