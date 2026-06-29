@@ -1634,6 +1634,19 @@ async function uploadDiaryPhotos(entryId, photos) {
   return uploaded;
 }
 
+async function saveDiaryImages(entryId, photos) {
+  const images = await buildPersistedDiaryPhotos(entryId, photos);
+  if (!hasSupabaseConfig || images.length === 0) return images;
+
+  const { data, error } = await supabase
+    .from('diary_images')
+    .insert(images)
+    .select('id, image_url, storage_path, sort_order');
+
+  if (error) throw error;
+  return data || images;
+}
+
 async function buildPersistedDiaryPhotos(entryId, photos) {
   const newUploads = await uploadDiaryPhotos(entryId, photos);
   let uploadIndex = 0;
@@ -1657,7 +1670,7 @@ async function buildPersistedDiaryPhotos(entryId, photos) {
 function buildLocalSavedEntry(entry, entryId, images) {
   const localImages =
     images ||
-    entry.photos.slice(0, 4).map((photo, index) => ({
+    entry.photos.slice(0, maxUploadPhotos).map((photo, index) => ({
       id: photo.id || `${entryId}-${index}`,
       src: getPhotoSrc(photo),
       storagePath: '',
@@ -1763,27 +1776,41 @@ export default function App() {
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
-      throw new Error('Supabase URL 또는 anon key가 설정되지 않아 DB에 저장할 수 없어요. .env.local을 확인해 주세요.');
+      const savedEntry = buildLocalSavedEntry(entry, entryId);
+      setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+      setSelectedEntryId(entryId);
+      return;
     }
 
-    const { error: entryError } = await supabase.from('diary_entries').insert({
-      id: entryId,
-      space_id: coupleSpaceId,
-      author_id: currentMemberId,
-      diary_date: entry.date,
-      location_text: entry.location,
-      body_text: entry.text,
-    });
+    const { data: savedRow, error: entryError } = await supabase
+      .from('diary_entries')
+      .insert({
+        id: entryId,
+        space_id: coupleSpaceId,
+        author_id: currentMemberId,
+        diary_date: entry.date,
+        location_text: entry.location,
+        body_text: entry.text,
+      })
+      .select('id, diary_date, location_text, body_text')
+      .single();
 
     if (entryError) throw entryError;
 
-    const images = await uploadDiaryPhotos(entryId, entry.photos);
-    if (images.length > 0) {
-      const { error: imagesError } = await supabase.from('diary_images').insert(images);
-      if (imagesError && !isMissingSupabaseSchema(imagesError)) throw imagesError;
-    }
+    const images = await saveDiaryImages(entryId, entry.photos);
 
-    const savedEntry = buildLocalSavedEntry(entry, entryId, images);
+    const savedEntry = buildLocalSavedEntry(
+      {
+        ...entry,
+        date: savedRow?.diary_date || entry.date,
+        dateLabel: formatDateLabel(savedRow?.diary_date || entry.date),
+        weekday: formatWeekday(savedRow?.diary_date || entry.date),
+        location: savedRow?.location_text || '',
+        text: savedRow?.body_text || entry.text,
+      },
+      entryId,
+      images
+    );
 
     setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
     setSelectedEntryId(entryId);
@@ -1928,11 +1955,11 @@ export default function App() {
 
     const persistedPhotos = await buildPersistedDiaryPhotos(entryId, changes.photos);
     const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
-    if (deleteImagesError && !isMissingSupabaseSchema(deleteImagesError)) throw deleteImagesError;
+    if (deleteImagesError) throw deleteImagesError;
 
     if (persistedPhotos.length > 0) {
       const { error: insertImagesError } = await supabase.from('diary_images').insert(persistedPhotos);
-      if (insertImagesError && !isMissingSupabaseSchema(insertImagesError)) throw insertImagesError;
+      if (insertImagesError) throw insertImagesError;
     }
 
     const savedPhotos = persistedPhotos.map((photo, index) => ({
