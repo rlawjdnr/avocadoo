@@ -21,7 +21,6 @@ create table if not exists public.diary_entries (
   diary_date date not null,
   location_text text,
   body_text text not null,
-  liked boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -40,8 +39,23 @@ create table if not exists public.diary_comments (
   entry_id uuid not null references public.diary_entries(id) on delete cascade,
   author_id uuid not null references public.couple_members(id) on delete restrict,
   body_text text not null,
-  liked boolean not null default false,
   created_at timestamptz not null default now()
+);
+
+create table if not exists public.diary_entry_likes (
+  id uuid primary key default gen_random_uuid(),
+  entry_id uuid not null references public.diary_entries(id) on delete cascade,
+  member_id uuid not null references public.couple_members(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (entry_id, member_id)
+);
+
+create table if not exists public.diary_comment_likes (
+  id uuid primary key default gen_random_uuid(),
+  comment_id uuid not null references public.diary_comments(id) on delete cascade,
+  member_id uuid not null references public.couple_members(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (comment_id, member_id)
 );
 
 create or replace function public.enforce_couple_member_limit()
@@ -82,6 +96,8 @@ alter table public.couple_members enable row level security;
 alter table public.diary_entries enable row level security;
 alter table public.diary_images enable row level security;
 alter table public.diary_comments enable row level security;
+alter table public.diary_entry_likes enable row level security;
+alter table public.diary_comment_likes enable row level security;
 
 drop policy if exists "public read couple spaces" on public.couple_spaces;
 create policy "public read couple spaces"
@@ -134,6 +150,36 @@ create policy "public update diary comments"
   on public.diary_comments for update
   using (true)
   with check (true);
+
+drop policy if exists "public read diary entry likes" on public.diary_entry_likes;
+create policy "public read diary entry likes"
+  on public.diary_entry_likes for select
+  using (true);
+
+drop policy if exists "public insert diary entry likes" on public.diary_entry_likes;
+create policy "public insert diary entry likes"
+  on public.diary_entry_likes for insert
+  with check (true);
+
+drop policy if exists "public delete diary entry likes" on public.diary_entry_likes;
+create policy "public delete diary entry likes"
+  on public.diary_entry_likes for delete
+  using (true);
+
+drop policy if exists "public read diary comment likes" on public.diary_comment_likes;
+create policy "public read diary comment likes"
+  on public.diary_comment_likes for select
+  using (true);
+
+drop policy if exists "public insert diary comment likes" on public.diary_comment_likes;
+create policy "public insert diary comment likes"
+  on public.diary_comment_likes for insert
+  with check (true);
+
+drop policy if exists "public delete diary comment likes" on public.diary_comment_likes;
+create policy "public delete diary comment likes"
+  on public.diary_comment_likes for delete
+  using (true);
 
 insert into storage.buckets (id, name, public)
 values ('diary-images', 'diary-images', true)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useAnimationControls } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
 const assets = {
@@ -26,7 +26,7 @@ const assets = {
 
 const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111-1111-4111-8111-111111111111';
 const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
-const currentMemberNickname = '정정욱';
+const currentMemberNickname = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_NICKNAME || '정정욱';
 const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
 
 const uploadButtonRadiusSpring = {
@@ -97,14 +97,6 @@ const screenPushTransition = {
 };
 
 const defaultScreenPushDistance = 390;
-const monthSlideSpring = {
-  type: 'spring',
-  stiffness: 480,
-  damping: 50,
-};
-const monthSwipeMinDistance = 96;
-const monthSwipeDominanceRatio = 1.45;
-
 const uploadFieldSpring = {
   type: 'spring',
   stiffness: 480,
@@ -324,7 +316,8 @@ const sampleEntries = [
     text: '{여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다. 여기에 일기 내용을 적으면 된다.}',
     location: '건대입구',
     liked: true,
-    comments: [{ id: 'sample-comment-1', nickname: '정정욱', text: '좋았던 하루!', liked: false }],
+    likeCount: 1,
+    comments: [{ id: 'sample-comment-1', nickname: '정정욱', text: '좋았던 하루!', liked: false, likeCount: 0 }],
   },
   {
     id: 'sample-week-2-a',
@@ -340,6 +333,7 @@ const sampleEntries = [
     text: '혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다. 혜민이가 귀엽게 나타났다.',
     location: '건대입구',
     liked: false,
+    likeCount: 0,
     comments: [],
   },
 ];
@@ -372,6 +366,7 @@ function getWeekIdForDate(value) {
 }
 
 function mapDiaryEntry(row) {
+  const entryLikes = row.diary_entry_likes || [];
   const photos = (row.diary_images || [])
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order)
@@ -383,12 +378,16 @@ function mapDiaryEntry(row) {
   const comments = (row.diary_comments || [])
     .slice()
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    .map((comment) => ({
-      id: comment.id,
-      nickname: comment.couple_members?.nickname || currentMemberNickname,
-      text: comment.body_text,
-      liked: comment.liked,
-    }));
+    .map((comment) => {
+      const commentLikes = comment.diary_comment_likes || [];
+      return {
+        id: comment.id,
+        nickname: comment.couple_members?.nickname || currentMemberNickname,
+        text: comment.body_text,
+        liked: commentLikes.some((like) => like.member_id === currentMemberId),
+        likeCount: commentLikes.length,
+      };
+    });
 
   return {
     id: row.id,
@@ -400,7 +399,8 @@ function mapDiaryEntry(row) {
     photos,
     text: row.body_text,
     location: row.location_text || '',
-    liked: row.liked,
+    liked: entryLikes.some((like) => like.member_id === currentMemberId),
+    likeCount: entryLikes.length,
     comments,
   };
 }
@@ -562,48 +562,44 @@ function HomeHeader({ monthDate }) {
 function HomeMonthPage({ weeks, onSelectWeek }) {
   return (
     <div className="home-month-page">
-      {weeks.map((week) => {
-        const hasDiary = week.photos.length > 0;
-        const content = (
-          <>
-            <span className="week-copy">
-              <strong>{week.range}</strong>
-              <em>{week.label}</em>
-            </span>
-            <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload')} />
-          </>
-        );
-
-        if (hasDiary) {
-          return (
-            <button className="week-card week-card-clickable" type="button" key={week.id} onClick={() => onSelectWeek(week)}>
-              {content}
-            </button>
+      <div className="week-list">
+        {weeks.map((week) => {
+          const hasDiary = week.photos.length > 0;
+          const content = (
+            <>
+              <span className="week-copy">
+                <strong>{week.range}</strong>
+                <em>{week.label}</em>
+              </span>
+              <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload')} />
+            </>
           );
-        }
 
-        return (
-          <article className="week-card" key={week.id}>
-            {content}
-          </article>
-        );
-      })}
+          if (hasDiary) {
+            return (
+              <button className="week-card week-card-clickable" type="button" key={week.id} onClick={() => onSelectWeek(week)}>
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <article className="week-card" key={week.id}>
+              {content}
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance }) {
   const dragBlockedClick = useRef(false);
-  const monthControls = useAnimationControls();
+  const monthViewportRef = useRef(null);
+  const monthScrollEndTimer = useRef(null);
+  const isResettingMonthScroll = useRef(false);
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
-  const monthDragConstraints = {
-    left: canGoNextMonth ? -screenPushDistance * 2 : -screenPushDistance,
-    right: 0,
-  };
-  const monthDragElastic = {
-    left: canGoNextMonth ? 0.08 : 0,
-    right: 0.08,
-  };
   const monthPages = [
     { offset: -1, date: addMonths(monthDate, -1) },
     { offset: 0, date: monthDate },
@@ -611,42 +607,61 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   ];
 
   useEffect(() => {
-    monthControls.set({ x: -screenPushDistance });
-  }, [monthControls, monthDate, screenPushDistance]);
+    const viewport = monthViewportRef.current;
+    if (!viewport) return undefined;
 
-  async function handleMonthDragEnd(event, info) {
-    const dragOffset = info.offset.x;
-    const verticalOffset = info.offset.y;
-    const horizontalDistance = Math.abs(dragOffset);
-    const verticalDistance = Math.abs(verticalOffset);
-    const monthSwipeDistance = Math.max(monthSwipeMinDistance, screenPushDistance * 0.18);
-    const hasHorizontalIntent = horizontalDistance >= monthSwipeDistance && horizontalDistance > verticalDistance * monthSwipeDominanceRatio;
+    isResettingMonthScroll.current = true;
+    viewport.scrollLeft = screenPushDistance;
+    const releaseReset = window.requestAnimationFrame(() => {
+      isResettingMonthScroll.current = false;
+    });
 
-    dragBlockedClick.current = horizontalDistance > 12 && horizontalDistance > verticalDistance;
-    window.setTimeout(() => {
-      dragBlockedClick.current = false;
-    }, 0);
+    return () => {
+      window.cancelAnimationFrame(releaseReset);
+      window.clearTimeout(monthScrollEndTimer.current);
+    };
+  }, [monthDate, screenPushDistance]);
 
-    if (!hasHorizontalIntent) {
-      monthControls.start({ x: -screenPushDistance, transition: monthSlideSpring });
-      return;
-    }
+  function settleMonthScroll() {
+    const viewport = monthViewportRef.current;
+    if (!viewport || isResettingMonthScroll.current) return;
 
-    if (dragOffset < 0 && canGoNextMonth) {
-      await monthControls.start({ x: -screenPushDistance * 2, transition: monthSlideSpring });
-      onChangeMonth(1);
-      monthControls.set({ x: -screenPushDistance });
-      return;
-    }
-
-    if (dragOffset > 0) {
-      await monthControls.start({ x: 0, transition: monthSlideSpring });
+    const pageIndex = Math.round(viewport.scrollLeft / screenPushDistance);
+    if (pageIndex === 0) {
+      isResettingMonthScroll.current = true;
       onChangeMonth(-1);
-      monthControls.set({ x: -screenPushDistance });
+      window.requestAnimationFrame(() => {
+        viewport.scrollLeft = screenPushDistance;
+        isResettingMonthScroll.current = false;
+      });
       return;
     }
 
-    monthControls.start({ x: -screenPushDistance, transition: monthSlideSpring });
+    if (pageIndex >= 2 && canGoNextMonth) {
+      isResettingMonthScroll.current = true;
+      onChangeMonth(1);
+      window.requestAnimationFrame(() => {
+        viewport.scrollLeft = screenPushDistance;
+        isResettingMonthScroll.current = false;
+      });
+      return;
+    }
+
+    if (pageIndex >= 2 && !canGoNextMonth) {
+      viewport.scrollTo({ left: screenPushDistance, behavior: 'smooth' });
+    }
+  }
+
+  function handleMonthScroll() {
+    const viewport = monthViewportRef.current;
+    if (!viewport || isResettingMonthScroll.current) return;
+
+    dragBlockedClick.current = Math.abs(viewport.scrollLeft - screenPushDistance) > 8;
+    window.clearTimeout(monthScrollEndTimer.current);
+    monthScrollEndTimer.current = window.setTimeout(() => {
+      settleMonthScroll();
+      dragBlockedClick.current = false;
+    }, 120);
   }
 
   function handleSelectWeek(week, nextScreen = 'list') {
@@ -658,26 +673,15 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader monthDate={monthDate} />
-      <div className="home-month-viewport">
-        <div className="week-list">
-          <motion.div
-            className="home-month-track"
-            drag="x"
-            dragDirectionLock
-            dragConstraints={monthDragConstraints}
-            dragElastic={monthDragElastic}
-            initial={{ x: -screenPushDistance }}
-            animate={monthControls}
-            onDragEnd={handleMonthDragEnd}
-          >
-            {monthPages.map((month) => (
-              <HomeMonthPage
-                key={getMonthKey(month.date)}
-                weeks={month.offset === 0 ? weeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
-                onSelectWeek={handleSelectWeek}
-              />
-            ))}
-          </motion.div>
+      <div className="home-month-viewport" ref={monthViewportRef} onScroll={handleMonthScroll}>
+        <div className="home-month-track">
+          {monthPages.map((month) => (
+            <HomeMonthPage
+              key={getMonthKey(month.date)}
+              weeks={month.offset === 0 ? weeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
+              onSelectWeek={handleSelectWeek}
+            />
+          ))}
         </div>
       </div>
       {weeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(weeks[0], 'upload')} /> : null}
@@ -821,7 +825,7 @@ function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = fals
         icon={assets.likeOutline}
         activeIcon={assets.likeFilled}
         active={entry.liked}
-        count={detail ? undefined : 1}
+        count={detail ? undefined : entry.likeCount || 0}
         label="좋아요"
         onClick={() => onToggleLike(entry.id)}
         compact={detail}
@@ -1015,6 +1019,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         photos: photos.slice(0, 5),
         text: text.trim() || '어떤 하루였나요?',
         liked: false,
+        likeCount: 0,
         comments: [],
       });
       onNavigate('list');
@@ -1094,16 +1099,16 @@ async function fetchDiaryEntries() {
       diary_date,
       location_text,
       body_text,
-      liked,
       created_at,
       couple_members:author_id ( nickname ),
       diary_images ( id, image_url, storage_path, sort_order ),
+      diary_entry_likes ( member_id ),
       diary_comments (
         id,
         body_text,
-        liked,
         created_at,
-        couple_members:author_id ( nickname )
+        couple_members:author_id ( nickname ),
+        diary_comment_likes ( member_id )
       )
     `
     )
@@ -1119,7 +1124,7 @@ async function fetchDiaryEntries() {
 function isMissingSupabaseSchema(error) {
   if (!error) return false;
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''} ${error.code || ''}`;
-  return message.includes('schema cache') || message.includes('diary_entries') || message.includes('PGRST205');
+  return message.includes('schema cache') || message.includes('diary_entries') || message.includes('diary_entry_likes') || message.includes('diary_comment_likes') || message.includes('PGRST200') || message.includes('PGRST205');
 }
 
 async function uploadDiaryPhotos(entryId, photos) {
@@ -1263,17 +1268,26 @@ export default function App() {
     const entry = entries.find((item) => item.id === entryId);
     if (!entry) return;
     const nextLiked = !entry.liked;
+    const nextLikeCount = Math.max(0, (entry.likeCount || 0) + (nextLiked ? 1 : -1));
+    const applyLikeState = (liked, likeCount) => {
+      setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked, likeCount } : entry)));
+    };
+
+    applyLikeState(nextLiked, nextLikeCount);
+
     if (!hasSupabaseConfig) {
-      setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked: nextLiked } : entry)));
       return;
     }
 
-    const { error } = await supabase.from('diary_entries').update({ liked: nextLiked }).eq('id', entryId);
+    const request = nextLiked
+      ? supabase.from('diary_entry_likes').insert({ entry_id: entryId, member_id: currentMemberId })
+      : supabase.from('diary_entry_likes').delete().eq('entry_id', entryId).eq('member_id', currentMemberId);
+    const { error } = await request;
     if (error) {
       setLoadError(error.message);
+      applyLikeState(entry.liked, entry.likeCount || 0);
       return;
     }
-    setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked: !entry.liked } : entry)));
   }
 
   async function toggleCommentLike(entryId, commentId) {
@@ -1281,35 +1295,34 @@ export default function App() {
     const comment = entry?.comments.find((item) => item.id === commentId);
     if (!comment) return;
     const nextLiked = !comment.liked;
-    if (!hasSupabaseConfig) {
+    const nextLikeCount = Math.max(0, (comment.likeCount || 0) + (nextLiked ? 1 : -1));
+    const applyCommentLikeState = (liked, likeCount) => {
       setEntries((current) =>
         current.map((entry) =>
           entry.id === entryId
             ? {
                 ...entry,
-                comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, liked: nextLiked } : comment)),
+                comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, liked, likeCount } : comment)),
               }
             : entry
         )
       );
+    };
+
+    applyCommentLikeState(nextLiked, nextLikeCount);
+
+    if (!hasSupabaseConfig) {
       return;
     }
 
-    const { error } = await supabase.from('diary_comments').update({ liked: nextLiked }).eq('id', commentId);
+    const request = nextLiked
+      ? supabase.from('diary_comment_likes').insert({ comment_id: commentId, member_id: currentMemberId })
+      : supabase.from('diary_comment_likes').delete().eq('comment_id', commentId).eq('member_id', currentMemberId);
+    const { error } = await request;
     if (error) {
       setLoadError(error.message);
-      return;
+      applyCommentLikeState(comment.liked, comment.likeCount || 0);
     }
-    setEntries((current) =>
-      current.map((entry) =>
-        entry.id === entryId
-          ? {
-              ...entry,
-              comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, liked: !comment.liked } : comment)),
-            }
-          : entry
-      )
-    );
   }
 
   async function addComment(entryId, text) {
@@ -1320,7 +1333,7 @@ export default function App() {
           entry.id === entryId
             ? {
                 ...entry,
-                comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false }, ...(entry.comments || [])],
+                comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 }, ...(entry.comments || [])],
               }
             : entry
         )
@@ -1345,7 +1358,7 @@ export default function App() {
         entry.id === entryId
           ? {
               ...entry,
-              comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false }, ...(entry.comments || [])],
+              comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 }, ...(entry.comments || [])],
             }
           : entry
       )

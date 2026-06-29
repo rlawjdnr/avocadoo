@@ -117,20 +117,32 @@ img {
   position: absolute;
   inset: 0;
   z-index: 1;
-  overflow: hidden;
-  touch-action: pan-y;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+.home-month-viewport::-webkit-scrollbar {
+  display: none;
 }
 
 .home-month-track {
   display: flex;
   width: max-content;
   min-height: 100%;
-  touch-action: pan-y;
 }
 
 .home-month-page {
+  position: relative;
   flex: 0 0 100vw;
   width: 100vw;
+  min-height: 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
 }
 
 .home-header {
