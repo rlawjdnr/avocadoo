@@ -606,12 +606,20 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     { offset: 1, date: addMonths(monthDate, 1) },
   ];
 
+  function getMonthPageWidth(viewport) {
+    return viewport?.clientWidth || screenPushDistance;
+  }
+
+  function resetMonthScroll(viewport) {
+    viewport.scrollLeft = getMonthPageWidth(viewport);
+  }
+
   useEffect(() => {
     const viewport = monthViewportRef.current;
     if (!viewport) return undefined;
 
     isResettingMonthScroll.current = true;
-    viewport.scrollLeft = screenPushDistance;
+    resetMonthScroll(viewport);
     const releaseReset = window.requestAnimationFrame(() => {
       isResettingMonthScroll.current = false;
     });
@@ -626,37 +634,43 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     const viewport = monthViewportRef.current;
     if (!viewport || isResettingMonthScroll.current) return;
 
-    const pageIndex = Math.round(viewport.scrollLeft / screenPushDistance);
-    if (pageIndex === 0) {
+    const monthPageWidth = getMonthPageWidth(viewport);
+    const scrollDelta = viewport.scrollLeft - monthPageWidth;
+    const monthSwipeThreshold = Math.max(96, monthPageWidth * 0.18);
+
+    if (scrollDelta <= -monthSwipeThreshold) {
       isResettingMonthScroll.current = true;
       onChangeMonth(-1);
       window.requestAnimationFrame(() => {
-        viewport.scrollLeft = screenPushDistance;
+        resetMonthScroll(viewport);
         isResettingMonthScroll.current = false;
       });
       return;
     }
 
-    if (pageIndex >= 2 && canGoNextMonth) {
+    if (scrollDelta >= monthSwipeThreshold && canGoNextMonth) {
       isResettingMonthScroll.current = true;
       onChangeMonth(1);
       window.requestAnimationFrame(() => {
-        viewport.scrollLeft = screenPushDistance;
+        resetMonthScroll(viewport);
         isResettingMonthScroll.current = false;
       });
       return;
     }
 
-    if (pageIndex >= 2 && !canGoNextMonth) {
-      viewport.scrollTo({ left: screenPushDistance, behavior: 'smooth' });
+    if (scrollDelta >= monthSwipeThreshold && !canGoNextMonth) {
+      viewport.scrollTo({ left: monthPageWidth, behavior: 'smooth' });
+      return;
     }
+
+    viewport.scrollTo({ left: monthPageWidth, behavior: 'smooth' });
   }
 
   function handleMonthScroll() {
     const viewport = monthViewportRef.current;
     if (!viewport || isResettingMonthScroll.current) return;
 
-    dragBlockedClick.current = Math.abs(viewport.scrollLeft - screenPushDistance) > 8;
+    dragBlockedClick.current = Math.abs(viewport.scrollLeft - getMonthPageWidth(viewport)) > 8;
     window.clearTimeout(monthScrollEndTimer.current);
     monthScrollEndTimer.current = window.setTimeout(() => {
       settleMonthScroll();
@@ -1162,6 +1176,27 @@ async function uploadDiaryPhotos(entryId, photos) {
   return uploaded;
 }
 
+function buildLocalSavedEntry(entry, entryId, images) {
+  const localImages =
+    images ||
+    entry.photos.slice(0, 4).map((photo, index) => ({
+      id: photo.id || `${entryId}-${index}`,
+      src: getPhotoSrc(photo),
+      storagePath: '',
+    }));
+
+  return {
+    ...entry,
+    id: entryId,
+    weekId: getWeekIdForDate(entry.date),
+    photos: localImages.map((image, index) => ({
+      id: image.id || `${entryId}-${index}`,
+      src: image.image_url || image.src,
+      storagePath: image.storage_path || image.storagePath || '',
+    })),
+  };
+}
+
 export default function App() {
   const [screen, setScreen] = useState('home');
   const [previousScreen, setPreviousScreen] = useState(null);
@@ -1204,15 +1239,7 @@ export default function App() {
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
-      const savedEntry = {
-        ...entry,
-        id: entryId,
-        weekId: getWeekIdForDate(entry.date),
-        photos: entry.photos.slice(0, 4).map((photo, index) => ({
-          id: photo.id || `${entryId}-${index}`,
-          src: getPhotoSrc(photo),
-        })),
-      };
+      const savedEntry = buildLocalSavedEntry(entry, entryId);
       setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
       setSelectedEntryId(entryId);
       return;
@@ -1227,24 +1254,24 @@ export default function App() {
       body_text: entry.text,
     });
 
-    if (entryError) throw entryError;
+    if (entryError) {
+      if (isMissingSupabaseSchema(entryError)) {
+        const savedEntry = buildLocalSavedEntry(entry, entryId);
+        setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+        setSelectedEntryId(entryId);
+        return;
+      }
+
+      throw entryError;
+    }
 
     const images = await uploadDiaryPhotos(entryId, entry.photos);
     if (images.length > 0) {
       const { error: imagesError } = await supabase.from('diary_images').insert(images);
-      if (imagesError) throw imagesError;
+      if (imagesError && !isMissingSupabaseSchema(imagesError)) throw imagesError;
     }
 
-    const savedEntry = {
-      ...entry,
-      id: entryId,
-      weekId: getWeekIdForDate(entry.date),
-      photos: images.map((image) => ({
-        id: `${entryId}-${image.sort_order}`,
-        src: image.image_url,
-        storagePath: image.storage_path,
-      })),
-    };
+    const savedEntry = buildLocalSavedEntry(entry, entryId, images);
 
     setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
     setSelectedEntryId(entryId);
