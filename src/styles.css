@@ -340,6 +340,10 @@ img {
   width: 99px;
   height: 116px;
   background: #ffffff;
+  box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
+}
+
+.polaroid-add .polaroid-paper {
   box-shadow: -2px 3px 5px 1px rgba(0, 0, 0, 0.09);
 }
 
@@ -684,7 +688,7 @@ img {
   width: 161.705px;
   height: 189.473px;
   background: #ffffff;
-  box-shadow: -2px 3px 4px 0.5px rgba(0, 0, 0, 0.12);
+  box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
 }
 
 .large-photo img {
@@ -916,10 +920,6 @@ img {
 .comments-screen .diary-item-detail .large-stack {
   margin-left: 0;
   margin-right: 0;
-}
-
-.comments-screen .diary-item-detail .large-photo {
-  box-shadow: -3.267px 4.9px 8.167px 1.633px rgba(0, 0, 0, 0.09);
 }
 
 .comments-screen .diary-item-detail .reaction-bar {

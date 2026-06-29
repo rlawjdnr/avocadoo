@@ -409,6 +409,53 @@ function isSupabaseUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
 }
 
+const localEntriesStorageKey = 'avocadoo.diary.entries.v1';
+
+function toStorableEntry(entry) {
+  return {
+    ...entry,
+    photos: (entry.photos || []).map((photo) => ({
+      id: photo.id,
+      src: getPhotoSrc(photo),
+      storagePath: photo.storagePath || photo.storage_path || '',
+    })),
+    comments: entry.comments || [],
+  };
+}
+
+function readLocalEntries() {
+  if (typeof window === 'undefined') return sortEntriesByDate(sampleEntries);
+
+  try {
+    const stored = window.localStorage.getItem(localEntriesStorageKey);
+    if (!stored) return sortEntriesByDate(sampleEntries);
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return sortEntriesByDate(sampleEntries);
+    return sortEntriesByDate(parsed);
+  } catch {
+    return sortEntriesByDate(sampleEntries);
+  }
+}
+
+function writeLocalEntries(entries) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(localEntriesStorageKey, JSON.stringify(entries.map(toStorableEntry)));
+  } catch {
+    // Ignore quota/private-mode failures; Supabase remains the source of truth when configured.
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatDateLabel(value) {
   if (!value) return '날짜 없음';
   const date = new Date(`${value}T00:00:00`);
@@ -1276,16 +1323,17 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
     return () => window.cancelAnimationFrame(frameId);
   }, [autoOpenDatePicker, onDatePickerAutoOpened]);
 
-  function handleFiles(event) {
-    const selected = Array.from(event.target.files || [])
+  async function handleFiles(event) {
+    const files = Array.from(event.target.files || [])
       .filter((file) => file.type.startsWith('image/'))
-      .slice(0, Math.max(0, maxUploadPhotos - photos.length))
-      .map((file) => ({
+      .slice(0, Math.max(0, maxUploadPhotos - photos.length));
+
+    const selected = await Promise.all(files.map(async (file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         file,
-        src: URL.createObjectURL(file),
-      }));
+        src: await readFileAsDataUrl(file),
+      })));
 
     if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
     event.target.value = '';
@@ -1433,16 +1481,17 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
   const uploadGridRows = Math.ceil((photos.length + (photos.length < maxUploadPhotos ? 1 : 0)) / uploadGridColumnCount) || 1;
 
-  function handleFiles(event) {
-    const selected = Array.from(event.target.files || [])
+  async function handleFiles(event) {
+    const files = Array.from(event.target.files || [])
       .filter((file) => file.type.startsWith('image/'))
-      .slice(0, Math.max(0, maxUploadPhotos - photos.length))
-      .map((file) => ({
+      .slice(0, Math.max(0, maxUploadPhotos - photos.length));
+
+    const selected = await Promise.all(files.map(async (file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         file,
-        src: URL.createObjectURL(file),
-      }));
+        src: await readFileAsDataUrl(file),
+      })));
 
     if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
     event.target.value = '';
@@ -1554,7 +1603,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
 }
 
 async function fetchDiaryEntries() {
-  if (!hasSupabaseConfig) return sortEntriesByDate(sampleEntries);
+  if (!hasSupabaseConfig) return readLocalEntries();
 
   const { data, error } = await supabase
     .from('diary_entries')
@@ -1732,18 +1781,30 @@ export default function App() {
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
 
+  function setEntriesAndCache(nextEntriesOrUpdater) {
+    setEntries((current) => {
+      const nextEntries = typeof nextEntriesOrUpdater === 'function' ? nextEntriesOrUpdater(current) : nextEntriesOrUpdater;
+      const sortedEntries = sortEntriesByDate(nextEntries);
+      writeLocalEntries(sortedEntries);
+      return sortedEntries;
+    });
+  }
+
   useEffect(() => {
     let isMounted = true;
 
     fetchDiaryEntries()
       .then((nextEntries) => {
         if (!isMounted) return;
-        setEntries(nextEntries);
+        setEntriesAndCache(nextEntries);
         setSelectedEntryId(nextEntries[0]?.id || null);
         setLoadError('');
       })
       .catch((error) => {
         if (!isMounted) return;
+        const localEntries = readLocalEntries();
+        setEntriesAndCache(localEntries);
+        setSelectedEntryId(localEntries[0]?.id || null);
         setLoadError(error.message || '일기를 불러오지 못했어요.');
       });
 
@@ -1780,7 +1841,7 @@ export default function App() {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
       const savedEntry = buildLocalSavedEntry(entry, entryId);
-      setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+      setEntriesAndCache((current) => [savedEntry, ...current]);
       setSelectedEntryId(entryId);
       return;
     }
@@ -1815,7 +1876,7 @@ export default function App() {
       images
     );
 
-    setEntries((current) => sortEntriesByDate([savedEntry, ...current]));
+    setEntriesAndCache((current) => [savedEntry, ...current]);
     setSelectedEntryId(entryId);
   }
 
@@ -1845,7 +1906,7 @@ export default function App() {
     const nextLiked = !entry.liked;
     const nextLikeCount = Math.max(0, (entry.likeCount || 0) + (nextLiked ? 1 : -1));
     const applyLikeState = (liked, likeCount) => {
-      setEntries((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked, likeCount } : entry)));
+      setEntriesAndCache((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked, likeCount } : entry)));
     };
 
     applyLikeState(nextLiked, nextLikeCount);
@@ -1872,7 +1933,7 @@ export default function App() {
     const nextLiked = !comment.liked;
     const nextLikeCount = Math.max(0, (comment.likeCount || 0) + (nextLiked ? 1 : -1));
     const applyCommentLikeState = (liked, likeCount) => {
-      setEntries((current) =>
+      setEntriesAndCache((current) =>
         current.map((entry) =>
           entry.id === entryId
             ? {
@@ -1905,7 +1966,7 @@ export default function App() {
     const comment = { id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 };
 
     if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
-      setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
+      setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
       return;
     }
 
@@ -1918,7 +1979,7 @@ export default function App() {
 
     if (error) {
       if (isMissingSupabaseSchema(error)) {
-        setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
+        setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
         return;
       }
 
@@ -1926,7 +1987,7 @@ export default function App() {
       return;
     }
 
-    setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
+    setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
   }
 
   async function updateEntry(entryId, changes) {
@@ -1941,7 +2002,7 @@ export default function App() {
     }));
 
     if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
-      setEntries((current) => updateLocalEntry(current, entryId, { ...changes, photos: nextPhotos }));
+      setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: nextPhotos }));
       return;
     }
 
@@ -1971,19 +2032,19 @@ export default function App() {
       storagePath: photo.storage_path,
     }));
 
-    setEntries((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
+    setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
   }
 
   async function deleteEntry(entryId) {
     if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
-      setEntries((current) => current.filter((entry) => entry.id !== entryId));
+      setEntriesAndCache((current) => current.filter((entry) => entry.id !== entryId));
       setSelectedEntryId(null);
       return;
     }
 
     const { error } = await supabase.from('diary_entries').delete().eq('id', entryId);
     if (error) throw error;
-    setEntries((current) => current.filter((entry) => entry.id !== entryId));
+    setEntriesAndCache((current) => current.filter((entry) => entry.id !== entryId));
     setSelectedEntryId(null);
   }
 
