@@ -405,6 +405,10 @@ function getPhotoSrc(photo) {
   return photo.src || photo.image_url || photo.publicUrl || '';
 }
 
+function isSupabaseUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
+}
+
 function formatDateLabel(value) {
   if (!value) return '날짜 없음';
   const date = new Date(`${value}T00:00:00`);
@@ -1577,7 +1581,6 @@ async function fetchDiaryEntries() {
     .order('diary_date', { ascending: false })
     .order('created_at', { ascending: false });
 
-  if (isMissingSupabaseSchema(error)) return sortEntriesByDate(sampleEntries);
   if (error) throw error;
   return sortEntriesByDate((data || []).map(mapDiaryEntry));
 }
@@ -1847,7 +1850,7 @@ export default function App() {
 
     applyLikeState(nextLiked, nextLikeCount);
 
-    if (!hasSupabaseConfig) {
+    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
       return;
     }
 
@@ -1883,7 +1886,7 @@ export default function App() {
 
     applyCommentLikeState(nextLiked, nextLikeCount);
 
-    if (!hasSupabaseConfig) {
+    if (!hasSupabaseConfig || !isSupabaseUuid(commentId)) {
       return;
     }
 
@@ -1901,7 +1904,7 @@ export default function App() {
     const commentId = crypto.randomUUID();
     const comment = { id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 };
 
-    if (!hasSupabaseConfig) {
+    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
       setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
       return;
     }
@@ -1937,7 +1940,7 @@ export default function App() {
       file: photo.file,
     }));
 
-    if (!hasSupabaseConfig) {
+    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
       setEntries((current) => updateLocalEntry(current, entryId, { ...changes, photos: nextPhotos }));
       return;
     }
@@ -1972,7 +1975,7 @@ export default function App() {
   }
 
   async function deleteEntry(entryId) {
-    if (!hasSupabaseConfig) {
+    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
       setEntries((current) => current.filter((entry) => entry.id !== entryId));
       setSelectedEntryId(null);
       return;
