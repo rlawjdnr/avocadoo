@@ -117,7 +117,7 @@ img {
   position: absolute;
   inset: 0;
   z-index: 1;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;

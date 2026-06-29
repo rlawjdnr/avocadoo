@@ -599,7 +599,11 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   const monthViewportRef = useRef(null);
   const monthScrollEndTimer = useRef(null);
   const monthGesture = useRef(null);
+  const monthPagingTimer = useRef(null);
   const isResettingMonthScroll = useRef(false);
+  const [monthTrackX, setMonthTrackX] = useState(-screenPushDistance);
+  const monthTrackXRef = useRef(-screenPushDistance);
+  const [isMonthDragging, setIsMonthDragging] = useState(false);
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
   const monthPages = [
     { offset: -1, date: addMonths(monthDate, -1) },
@@ -612,7 +616,14 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   }
 
   function resetMonthScroll(viewport) {
-    viewport.scrollLeft = getMonthPageWidth(viewport);
+    const monthPageWidth = getMonthPageWidth(viewport);
+    viewport.scrollLeft = monthPageWidth;
+    setMonthTrackPosition(-monthPageWidth);
+  }
+
+  function setMonthTrackPosition(value) {
+    monthTrackXRef.current = value;
+    setMonthTrackX(value);
   }
 
   function getMonthSwipeThreshold(viewport) {
@@ -621,7 +632,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   }
 
   function snapMonthBack(viewport) {
-    viewport.scrollTo({ left: getMonthPageWidth(viewport), behavior: 'smooth' });
+    setMonthTrackPosition(-getMonthPageWidth(viewport));
   }
 
   function moveMonth(direction, viewport) {
@@ -630,12 +641,17 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
       return;
     }
 
+    const monthPageWidth = getMonthPageWidth(viewport);
+    const targetTrackX = direction < 0 ? 0 : -monthPageWidth * 2;
+
     isResettingMonthScroll.current = true;
-    onChangeMonth(direction);
-    window.requestAnimationFrame(() => {
+    setMonthTrackPosition(targetTrackX);
+    window.clearTimeout(monthPagingTimer.current);
+    monthPagingTimer.current = window.setTimeout(() => {
+      onChangeMonth(direction);
       resetMonthScroll(viewport);
       isResettingMonthScroll.current = false;
-    });
+    }, 320);
   }
 
   function startMonthGesture(pointerId, x, y, source = 'pointer') {
@@ -649,6 +665,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
       startX: x,
       startY: y,
       startScrollLeft: viewport.scrollLeft,
+      startTrackX: monthTrackXRef.current,
       isHorizontal: false,
     };
   }
@@ -666,14 +683,15 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     if (!gesture.isHorizontal && absX > 14 && absX > absY * 1.25) {
       gesture.isHorizontal = true;
       dragBlockedClick.current = true;
+      setIsMonthDragging(true);
     }
 
     if (!gesture.isHorizontal) return false;
 
     if (event?.cancelable) event.preventDefault();
-    const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
-    const nextScrollLeft = Math.min(Math.max(gesture.startScrollLeft - deltaX, 0), maxScrollLeft);
-    viewport.scrollLeft = nextScrollLeft;
+    const monthPageWidth = getMonthPageWidth(viewport);
+    const nextTrackX = Math.min(Math.max(gesture.startTrackX + deltaX, -monthPageWidth * 2), 0);
+    setMonthTrackPosition(nextTrackX);
     return true;
   }
 
@@ -683,6 +701,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
 
     monthGesture.current = null;
+    setIsMonthDragging(false);
 
     if (cancelled || !gesture.isHorizontal) {
       snapMonthBack(viewport);
@@ -720,6 +739,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     return () => {
       window.cancelAnimationFrame(releaseReset);
       window.clearTimeout(monthScrollEndTimer.current);
+      window.clearTimeout(monthPagingTimer.current);
     };
   }, [monthDate, screenPushDistance]);
 
@@ -788,7 +808,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     if (!viewport || isResettingMonthScroll.current) return;
 
     const monthPageWidth = getMonthPageWidth(viewport);
-    const scrollDelta = viewport.scrollLeft - monthPageWidth;
+    const scrollDelta = monthTrackX + monthPageWidth;
     const monthSwipeThreshold = getMonthSwipeThreshold(viewport);
 
     if (scrollDelta <= -monthSwipeThreshold) {
@@ -862,7 +882,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
         onPointerUp={finishMonthPointer}
         onPointerCancel={(event) => finishMonthPointer(event, true)}
       >
-        <div className="home-month-track">
+        <motion.div className="home-month-track" animate={{ x: monthTrackX }} transition={isMonthDragging ? { duration: 0 } : screenPushTransition}>
           {monthPages.map((month) => (
             <HomeMonthPage
               key={getMonthKey(month.date)}
@@ -870,7 +890,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
               onSelectWeek={handleSelectWeek}
             />
           ))}
-        </div>
+        </motion.div>
       </div>
       {weeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(weeks[0], 'upload')} /> : null}
       <CoveredPageDim visible={transitionKind === 'home-to-list'} />
