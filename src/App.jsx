@@ -598,6 +598,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
   const monthScrollEndTimer = useRef(null);
+  const monthGesture = useRef(null);
   const isResettingMonthScroll = useRef(false);
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
   const monthPages = [
@@ -612,6 +613,29 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
 
   function resetMonthScroll(viewport) {
     viewport.scrollLeft = getMonthPageWidth(viewport);
+  }
+
+  function getMonthSwipeThreshold(viewport) {
+    const monthPageWidth = getMonthPageWidth(viewport);
+    return Math.max(96, monthPageWidth * 0.18);
+  }
+
+  function snapMonthBack(viewport) {
+    viewport.scrollTo({ left: getMonthPageWidth(viewport), behavior: 'smooth' });
+  }
+
+  function moveMonth(direction, viewport) {
+    if (direction > 0 && !canGoNextMonth) {
+      snapMonthBack(viewport);
+      return;
+    }
+
+    isResettingMonthScroll.current = true;
+    onChangeMonth(direction);
+    window.requestAnimationFrame(() => {
+      resetMonthScroll(viewport);
+      isResettingMonthScroll.current = false;
+    });
   }
 
   useEffect(() => {
@@ -636,39 +660,100 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
 
     const monthPageWidth = getMonthPageWidth(viewport);
     const scrollDelta = viewport.scrollLeft - monthPageWidth;
-    const monthSwipeThreshold = Math.max(96, monthPageWidth * 0.18);
+    const monthSwipeThreshold = getMonthSwipeThreshold(viewport);
 
     if (scrollDelta <= -monthSwipeThreshold) {
-      isResettingMonthScroll.current = true;
-      onChangeMonth(-1);
-      window.requestAnimationFrame(() => {
-        resetMonthScroll(viewport);
-        isResettingMonthScroll.current = false;
-      });
+      moveMonth(-1, viewport);
       return;
     }
 
-    if (scrollDelta >= monthSwipeThreshold && canGoNextMonth) {
-      isResettingMonthScroll.current = true;
-      onChangeMonth(1);
-      window.requestAnimationFrame(() => {
-        resetMonthScroll(viewport);
-        isResettingMonthScroll.current = false;
-      });
+    if (scrollDelta >= monthSwipeThreshold) {
+      moveMonth(1, viewport);
       return;
     }
 
-    if (scrollDelta >= monthSwipeThreshold && !canGoNextMonth) {
-      viewport.scrollTo({ left: monthPageWidth, behavior: 'smooth' });
+    snapMonthBack(viewport);
+  }
+
+  function handleMonthPointerDown(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    const viewport = monthViewportRef.current;
+    if (!viewport) return;
+
+    window.clearTimeout(monthScrollEndTimer.current);
+    monthGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      isHorizontal: false,
+    };
+
+    if (event.currentTarget.setPointerCapture) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+  }
+
+  function handleMonthPointerMove(event) {
+    const viewport = monthViewportRef.current;
+    const gesture = monthGesture.current;
+    if (!viewport || !gesture || gesture.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (!gesture.isHorizontal && absX > 14 && absX > absY * 1.25) {
+      gesture.isHorizontal = true;
+      dragBlockedClick.current = true;
+    }
+
+    if (!gesture.isHorizontal) return;
+
+    event.preventDefault();
+    const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
+    const nextScrollLeft = Math.min(Math.max(gesture.startScrollLeft - deltaX, 0), maxScrollLeft);
+    viewport.scrollLeft = nextScrollLeft;
+  }
+
+  function finishMonthPointer(event, cancelled = false) {
+    const viewport = monthViewportRef.current;
+    const gesture = monthGesture.current;
+    if (!viewport || !gesture || gesture.pointerId !== event.pointerId) return;
+
+    monthGesture.current = null;
+
+    if (event.currentTarget.releasePointerCapture) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (cancelled || !gesture.isHorizontal) {
+      snapMonthBack(viewport);
       return;
     }
 
-    viewport.scrollTo({ left: monthPageWidth, behavior: 'smooth' });
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    const isValidSwipe = absX >= getMonthSwipeThreshold(viewport) && absX > absY * 1.25;
+
+    if (isValidSwipe) {
+      moveMonth(deltaX > 0 ? -1 : 1, viewport);
+    } else {
+      snapMonthBack(viewport);
+    }
+
+    window.setTimeout(() => {
+      dragBlockedClick.current = false;
+    }, 160);
   }
 
   function handleMonthScroll() {
     const viewport = monthViewportRef.current;
-    if (!viewport || isResettingMonthScroll.current) return;
+    if (!viewport || isResettingMonthScroll.current || monthGesture.current?.isHorizontal) return;
 
     dragBlockedClick.current = Math.abs(viewport.scrollLeft - getMonthPageWidth(viewport)) > 8;
     window.clearTimeout(monthScrollEndTimer.current);
@@ -687,7 +772,15 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader monthDate={monthDate} />
-      <div className="home-month-viewport" ref={monthViewportRef} onScroll={handleMonthScroll}>
+      <div
+        className="home-month-viewport"
+        ref={monthViewportRef}
+        onScroll={handleMonthScroll}
+        onPointerDown={handleMonthPointerDown}
+        onPointerMove={handleMonthPointerMove}
+        onPointerUp={finishMonthPointer}
+        onPointerCancel={(event) => finishMonthPointer(event, true)}
+      >
         <div className="home-month-track">
           {monthPages.map((month) => (
             <HomeMonthPage
