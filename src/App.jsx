@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
@@ -603,6 +603,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   const monthTrackXRef = useRef(-screenPushDistance);
   const [isMonthDragging, setIsMonthDragging] = useState(false);
   const [isMonthResetting, setIsMonthResetting] = useState(false);
+  const pendingMonthReset = useRef(false);
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
   const monthPages = [
     { offset: -1, date: addMonths(monthDate, -1) },
@@ -647,11 +648,8 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     window.clearTimeout(monthPagingTimer.current);
     monthPagingTimer.current = window.setTimeout(() => {
       setIsMonthResetting(true);
+      pendingMonthReset.current = true;
       onChangeMonth(direction);
-      resetMonthScroll(viewport);
-      window.requestAnimationFrame(() => {
-        setIsMonthResetting(false);
-      });
     }, 320);
   }
 
@@ -725,11 +723,17 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     return true;
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = monthViewportRef.current;
     if (!viewport) return undefined;
 
     resetMonthScroll(viewport);
+    if (pendingMonthReset.current) {
+      pendingMonthReset.current = false;
+      window.requestAnimationFrame(() => {
+        setIsMonthResetting(false);
+      });
+    }
 
     return () => {
       window.clearTimeout(monthPagingTimer.current);
