@@ -602,6 +602,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   const [monthTrackX, setMonthTrackX] = useState(-screenPushDistance);
   const monthTrackXRef = useRef(-screenPushDistance);
   const [isMonthDragging, setIsMonthDragging] = useState(false);
+  const [isMonthResetting, setIsMonthResetting] = useState(false);
   const canGoNextMonth = !isFutureMonth(addMonths(monthDate, 1));
   const monthPages = [
     { offset: -1, date: addMonths(monthDate, -1) },
@@ -645,8 +646,12 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     setMonthTrackPosition(targetTrackX);
     window.clearTimeout(monthPagingTimer.current);
     monthPagingTimer.current = window.setTimeout(() => {
+      setIsMonthResetting(true);
       onChangeMonth(direction);
       resetMonthScroll(viewport);
+      window.requestAnimationFrame(() => {
+        setIsMonthResetting(false);
+      });
     }, 320);
   }
 
@@ -836,7 +841,7 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
         onPointerUp={finishMonthPointer}
         onPointerCancel={(event) => finishMonthPointer(event, true)}
       >
-        <motion.div className="home-month-track" animate={{ x: monthTrackX }} transition={isMonthDragging ? { duration: 0 } : screenPushTransition}>
+        <motion.div className="home-month-track" animate={{ x: monthTrackX }} transition={isMonthDragging || isMonthResetting ? { duration: 0 } : screenPushTransition}>
           {monthPages.map((month) => (
             <HomeMonthPage
               key={getMonthKey(month.date)}
