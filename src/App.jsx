@@ -679,6 +679,7 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     const viewport = monthViewportRef.current;
     if (!viewport) return;
 
+    dragBlockedClick.current = false;
     monthGesture.current = {
       pointerId,
       source,
@@ -724,10 +725,12 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
 
     if (cancelled) {
       if (gesture.isHorizontal) snapMonthBack(viewport);
+      dragBlockedClick.current = false;
       return true;
     }
 
     if (!gesture.isHorizontal) {
+      dragBlockedClick.current = false;
       return true;
     }
 
@@ -1263,7 +1266,18 @@ async function fetchDiaryEntries() {
 function isMissingSupabaseSchema(error) {
   if (!error) return false;
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''} ${error.code || ''}`;
-  return message.includes('schema cache') || message.includes('diary_entries') || message.includes('diary_entry_likes') || message.includes('diary_comment_likes') || message.includes('PGRST200') || message.includes('PGRST205');
+  return (
+    message.includes('schema cache') ||
+    message.includes('couple_spaces') ||
+    message.includes('couple_members') ||
+    message.includes('diary_entries') ||
+    message.includes('diary_images') ||
+    message.includes('diary_comments') ||
+    message.includes('diary_entry_likes') ||
+    message.includes('diary_comment_likes') ||
+    message.includes('PGRST200') ||
+    message.includes('PGRST205')
+  );
 }
 
 async function uploadDiaryPhotos(entryId, photos) {
@@ -1320,6 +1334,17 @@ function buildLocalSavedEntry(entry, entryId, images) {
       storagePath: image.storage_path || image.storagePath || '',
     })),
   };
+}
+
+function addLocalCommentToEntries(entries, entryId, comment) {
+  return entries.map((entry) =>
+    entry.id === entryId
+      ? {
+          ...entry,
+          comments: [comment, ...(entry.comments || [])],
+        }
+      : entry
+  );
 }
 
 export default function App() {
@@ -1466,17 +1491,10 @@ export default function App() {
 
   async function addComment(entryId, text) {
     const commentId = crypto.randomUUID();
+    const comment = { id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 };
+
     if (!hasSupabaseConfig) {
-      setEntries((current) =>
-        current.map((entry) =>
-          entry.id === entryId
-            ? {
-                ...entry,
-                comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 }, ...(entry.comments || [])],
-              }
-            : entry
-        )
-      );
+      setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
       return;
     }
 
@@ -1488,20 +1506,16 @@ export default function App() {
     });
 
     if (error) {
+      if (isMissingSupabaseSchema(error)) {
+        setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
+        return;
+      }
+
       setLoadError(error.message);
       return;
     }
 
-    setEntries((current) =>
-      current.map((entry) =>
-        entry.id === entryId
-          ? {
-              ...entry,
-              comments: [{ id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 }, ...(entry.comments || [])],
-            }
-          : entry
-      )
-    );
+    setEntries((current) => addLocalCommentToEntries(current, entryId, comment));
   }
 
   const showHome = screen === 'home' || screenTransition === 'home-to-list';
