@@ -638,6 +638,75 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
     });
   }
 
+  function startMonthGesture(pointerId, x, y, source = 'pointer') {
+    const viewport = monthViewportRef.current;
+    if (!viewport) return;
+
+    window.clearTimeout(monthScrollEndTimer.current);
+    monthGesture.current = {
+      pointerId,
+      source,
+      startX: x,
+      startY: y,
+      startScrollLeft: viewport.scrollLeft,
+      isHorizontal: false,
+    };
+  }
+
+  function updateMonthGesture(pointerId, x, y, event) {
+    const viewport = monthViewportRef.current;
+    const gesture = monthGesture.current;
+    if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
+
+    const deltaX = x - gesture.startX;
+    const deltaY = y - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (!gesture.isHorizontal && absX > 14 && absX > absY * 1.25) {
+      gesture.isHorizontal = true;
+      dragBlockedClick.current = true;
+    }
+
+    if (!gesture.isHorizontal) return false;
+
+    if (event?.cancelable) event.preventDefault();
+    const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
+    const nextScrollLeft = Math.min(Math.max(gesture.startScrollLeft - deltaX, 0), maxScrollLeft);
+    viewport.scrollLeft = nextScrollLeft;
+    return true;
+  }
+
+  function finishMonthGesture(pointerId, x, y, cancelled = false) {
+    const viewport = monthViewportRef.current;
+    const gesture = monthGesture.current;
+    if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
+
+    monthGesture.current = null;
+
+    if (cancelled || !gesture.isHorizontal) {
+      snapMonthBack(viewport);
+      return true;
+    }
+
+    const deltaX = x - gesture.startX;
+    const deltaY = y - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    const isValidSwipe = absX >= getMonthSwipeThreshold(viewport) && absX > absY * 1.25;
+
+    if (isValidSwipe) {
+      moveMonth(deltaX > 0 ? -1 : 1, viewport);
+    } else {
+      snapMonthBack(viewport);
+    }
+
+    window.setTimeout(() => {
+      dragBlockedClick.current = false;
+    }, 160);
+    return true;
+  }
+
   useEffect(() => {
     const viewport = monthViewportRef.current;
     if (!viewport) return undefined;
@@ -653,6 +722,66 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
       window.clearTimeout(monthScrollEndTimer.current);
     };
   }, [monthDate, screenPushDistance]);
+
+  useEffect(() => {
+    const viewport = monthViewportRef.current;
+    if (!viewport) return undefined;
+
+    function findTouch(touchList, touchId) {
+      for (let index = 0; index < touchList.length; index += 1) {
+        const touch = touchList.item(index);
+        if (`touch-${touch.identifier}` === touchId) return touch;
+      }
+      return null;
+    }
+
+    function handleTouchStart(event) {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches.item(0);
+      startMonthGesture(`touch-${touch.identifier}`, touch.clientX, touch.clientY, 'touch');
+    }
+
+    function handleTouchMove(event) {
+      const gesture = monthGesture.current;
+      if (!gesture || gesture.source !== 'touch') return;
+
+      const touch = findTouch(event.touches, gesture.pointerId);
+      if (!touch) return;
+      updateMonthGesture(gesture.pointerId, touch.clientX, touch.clientY, event);
+    }
+
+    function handleTouchEnd(event) {
+      const gesture = monthGesture.current;
+      if (!gesture || gesture.source !== 'touch') return;
+
+      const touch = findTouch(event.changedTouches, gesture.pointerId);
+      if (!touch) {
+        monthGesture.current = null;
+        return;
+      }
+      finishMonthGesture(gesture.pointerId, touch.clientX, touch.clientY);
+    }
+
+    function handleTouchCancel(event) {
+      const gesture = monthGesture.current;
+      if (!gesture || gesture.source !== 'touch') return;
+
+      const touch = findTouch(event.changedTouches, gesture.pointerId);
+      finishMonthGesture(gesture.pointerId, touch?.clientX ?? gesture.startX, touch?.clientY ?? gesture.startY, true);
+    }
+
+    viewport.addEventListener('touchstart', handleTouchStart, { passive: true });
+    viewport.addEventListener('touchmove', handleTouchMove, { passive: false });
+    viewport.addEventListener('touchend', handleTouchEnd);
+    viewport.addEventListener('touchcancel', handleTouchCancel);
+
+    return () => {
+      viewport.removeEventListener('touchstart', handleTouchStart);
+      viewport.removeEventListener('touchmove', handleTouchMove);
+      viewport.removeEventListener('touchend', handleTouchEnd);
+      viewport.removeEventListener('touchcancel', handleTouchCancel);
+    };
+  }, [canGoNextMonth, screenPushDistance]);
 
   function settleMonthScroll() {
     const viewport = monthViewportRef.current;
@@ -677,18 +806,12 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
 
   function handleMonthPointerDown(event) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType === 'touch') return;
 
     const viewport = monthViewportRef.current;
     if (!viewport) return;
 
-    window.clearTimeout(monthScrollEndTimer.current);
-    monthGesture.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startScrollLeft: viewport.scrollLeft,
-      isHorizontal: false,
-    };
+    startMonthGesture(event.pointerId, event.clientX, event.clientY);
 
     if (event.currentTarget.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -696,59 +819,17 @@ function Home({ active = true, monthDate, weeks, entries, onChangeMonth, onSelec
   }
 
   function handleMonthPointerMove(event) {
-    const viewport = monthViewportRef.current;
-    const gesture = monthGesture.current;
-    if (!viewport || !gesture || gesture.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-
-    if (!gesture.isHorizontal && absX > 14 && absX > absY * 1.25) {
-      gesture.isHorizontal = true;
-      dragBlockedClick.current = true;
-    }
-
-    if (!gesture.isHorizontal) return;
-
-    event.preventDefault();
-    const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
-    const nextScrollLeft = Math.min(Math.max(gesture.startScrollLeft - deltaX, 0), maxScrollLeft);
-    viewport.scrollLeft = nextScrollLeft;
+    updateMonthGesture(event.pointerId, event.clientX, event.clientY, event);
   }
 
   function finishMonthPointer(event, cancelled = false) {
-    const viewport = monthViewportRef.current;
     const gesture = monthGesture.current;
-    if (!viewport || !gesture || gesture.pointerId !== event.pointerId) return;
-
-    monthGesture.current = null;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
 
     if (event.currentTarget.releasePointerCapture) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-
-    if (cancelled || !gesture.isHorizontal) {
-      snapMonthBack(viewport);
-      return;
-    }
-
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-    const isValidSwipe = absX >= getMonthSwipeThreshold(viewport) && absX > absY * 1.25;
-
-    if (isValidSwipe) {
-      moveMonth(deltaX > 0 ? -1 : 1, viewport);
-    } else {
-      snapMonthBack(viewport);
-    }
-
-    window.setTimeout(() => {
-      dragBlockedClick.current = false;
-    }, 160);
+    finishMonthGesture(event.pointerId, event.clientX, event.clientY, cancelled);
   }
 
   function handleMonthScroll() {
