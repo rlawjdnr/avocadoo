@@ -419,6 +419,8 @@ function toStorableEntry(entry) {
       src: getPhotoSrc(photo),
       storagePath: photo.storagePath || photo.storage_path || '',
       storage_path: photo.storagePath || photo.storage_path || '',
+      sortOrder: photo.sortOrder ?? photo.sort_order,
+      sort_order: photo.sortOrder ?? photo.sort_order,
     })),
     comments: entry.comments || [],
   };
@@ -1672,6 +1674,8 @@ async function fetchDiaryEntries() {
           src: image.image_url,
           storagePath: image.storage_path,
           storage_path: image.storage_path,
+          sortOrder: image.sort_order,
+          sort_order: image.sort_order,
         }));
       const likes = likesByEntry.get(entry.id) || [];
       const entryComments = (commentsByEntry.get(entry.id) || [])
@@ -1793,6 +1797,59 @@ async function buildPersistedDiaryPhotos(entryId, photos) {
   });
 }
 
+async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
+  const currentImageIds = (currentPhotos || []).map((photo) => photo.id).filter(isSupabaseUuid);
+  const nextExistingIds = new Set((nextPhotos || []).filter((photo) => !photo.file).map((photo) => photo.id).filter(isSupabaseUuid));
+  const removedImageIds = currentImageIds.filter((photoId) => !nextExistingIds.has(photoId));
+
+  if (removedImageIds.length > 0) {
+    const { error: deleteImagesError } = await supabase.from('diary_images').delete().in('id', removedImageIds);
+    if (deleteImagesError) throw deleteImagesError;
+  }
+
+  const maxSortOrder = (currentPhotos || []).reduce((maxOrder, photo) => {
+    const sortOrder = Number(photo.sortOrder ?? photo.sort_order);
+    return Number.isFinite(sortOrder) ? Math.max(maxOrder, sortOrder) : maxOrder;
+  }, -1);
+  const newPhotos = (nextPhotos || []).filter((photo) => photo.file);
+  const uploadedImages = await uploadDiaryPhotos(entryId, newPhotos);
+  const insertedImages = uploadedImages.map((image, index) => ({ ...image, sort_order: maxSortOrder + index + 1 }));
+
+  if (insertedImages.length > 0) {
+    const { data, error: insertImagesError } = await supabase
+      .from('diary_images')
+      .insert(insertedImages)
+      .select('id, image_url, storage_path, sort_order');
+    if (insertImagesError) throw insertImagesError;
+    insertedImages.splice(0, insertedImages.length, ...(data || insertedImages));
+  }
+
+  let uploadIndex = 0;
+  return (nextPhotos || []).slice(0, maxUploadPhotos).map((photo, index) => {
+    if (photo.file) {
+      const uploaded = insertedImages[uploadIndex];
+      uploadIndex += 1;
+      return {
+        id: uploaded?.id || photo.id || `${entryId}-${index}`,
+        src: uploaded?.image_url || getPhotoSrc(photo),
+        storagePath: uploaded?.storage_path || photo.storagePath || photo.storage_path || '',
+        storage_path: uploaded?.storage_path || photo.storagePath || photo.storage_path || '',
+        sortOrder: uploaded?.sort_order ?? maxSortOrder + uploadIndex,
+        sort_order: uploaded?.sort_order ?? maxSortOrder + uploadIndex,
+      };
+    }
+
+    return {
+      id: photo.id || `${entryId}-${index}`,
+      src: getPhotoSrc(photo),
+      storagePath: photo.storagePath || photo.storage_path || '',
+      storage_path: photo.storagePath || photo.storage_path || '',
+      sortOrder: photo.sortOrder ?? photo.sort_order ?? index,
+      sort_order: photo.sortOrder ?? photo.sort_order ?? index,
+    };
+  });
+}
+
 function buildLocalSavedEntry(entry, entryId, images) {
   const localImages =
     images ||
@@ -1811,6 +1868,8 @@ function buildLocalSavedEntry(entry, entryId, images) {
       src: image.image_url || image.src,
       storagePath: image.storage_path || image.storagePath || '',
       storage_path: image.storage_path || image.storagePath || '',
+      sortOrder: image.sort_order ?? image.sortOrder ?? index,
+      sort_order: image.sort_order ?? image.sortOrder ?? index,
     })),
   };
 }
@@ -2073,6 +2132,9 @@ export default function App() {
       id: photo.id || `${entryId}-${index}`,
       src: getPhotoSrc(photo),
       storagePath: photo.storagePath || photo.storage_path || '',
+      storage_path: photo.storagePath || photo.storage_path || '',
+      sortOrder: photo.sortOrder ?? photo.sort_order ?? index,
+      sort_order: photo.sortOrder ?? photo.sort_order ?? index,
       file: photo.file,
     }));
 
@@ -2092,32 +2154,7 @@ export default function App() {
 
     if (entryError) throw entryError;
 
-    const persistedPhotos = await buildPersistedDiaryPhotos(entryId, changes.photos);
-    if (persistedPhotos.length === 0) {
-      const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
-      if (deleteImagesError) throw deleteImagesError;
-    } else {
-      const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId).gte('sort_order', persistedPhotos.length);
-      if (deleteImagesError) throw deleteImagesError;
-    }
-
-    let savedImageRows = [];
-    if (persistedPhotos.length > 0) {
-      const imageRows = persistedPhotos.map(({ id, ...photo }) => photo);
-      const { data, error: insertImagesError } = await supabase
-        .from('diary_images')
-        .upsert(imageRows, { onConflict: 'entry_id,sort_order' })
-        .select('id, image_url, storage_path, sort_order');
-      if (insertImagesError) throw insertImagesError;
-      savedImageRows = (data || imageRows).slice().sort((a, b) => a.sort_order - b.sort_order);
-    }
-
-    const savedPhotos = savedImageRows.map((photo, index) => ({
-      id: photo.id || `${entryId}-${index}`,
-      src: photo.image_url,
-      storagePath: photo.storage_path,
-      storage_path: photo.storage_path,
-    }));
+    const savedPhotos = await saveChangedDiaryImages(entryId, entry.photos || [], nextPhotos);
 
     setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
   }
