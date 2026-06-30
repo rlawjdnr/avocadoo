@@ -1728,6 +1728,12 @@ function isMissingSupabaseSchema(error) {
   );
 }
 
+function isDiaryImagesPolicyError(error) {
+  if (!error) return false;
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''} ${error.code || ''}`;
+  return message.includes('row-level security') && message.includes('diary_images');
+}
+
 async function uploadDiaryPhotos(entryId, photos) {
   if (!hasSupabaseConfig) {
     return photos.map((photo, index) => ({
@@ -2154,7 +2160,12 @@ export default function App() {
 
     if (entryError) throw entryError;
 
-    const savedPhotos = await saveChangedDiaryImages(entryId, entry.photos || [], nextPhotos);
+    let savedPhotos = nextPhotos;
+    try {
+      savedPhotos = await saveChangedDiaryImages(entryId, entry.photos || [], nextPhotos);
+    } catch (imageError) {
+      if (!isDiaryImagesPolicyError(imageError)) throw imageError;
+    }
 
     setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
   }
