@@ -140,6 +140,12 @@ create policy "public insert diary images"
   on public.diary_images for insert
   with check (true);
 
+drop policy if exists "public update diary images" on public.diary_images;
+create policy "public update diary images"
+  on public.diary_images for update
+  using (true)
+  with check (true);
+
 drop policy if exists "public delete diary images" on public.diary_images;
 create policy "public delete diary images"
   on public.diary_images for delete

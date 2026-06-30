@@ -418,6 +418,7 @@ function toStorableEntry(entry) {
       id: photo.id,
       src: getPhotoSrc(photo),
       storagePath: photo.storagePath || photo.storage_path || '',
+      storage_path: photo.storagePath || photo.storage_path || '',
     })),
     comments: entry.comments || [],
   };
@@ -1670,6 +1671,7 @@ async function fetchDiaryEntries() {
           id: image.id,
           src: image.image_url,
           storagePath: image.storage_path,
+          storage_path: image.storage_path,
         }));
       const likes = likesByEntry.get(entry.id) || [];
       const entryComments = (commentsByEntry.get(entry.id) || [])
@@ -1782,6 +1784,7 @@ async function buildPersistedDiaryPhotos(entryId, photos) {
     }
 
     return {
+      ...(isSupabaseUuid(photo.id) ? { id: photo.id } : {}),
       entry_id: entryId,
       image_url: getPhotoSrc(photo),
       storage_path: photo.storagePath || photo.storage_path || '',
@@ -1807,6 +1810,7 @@ function buildLocalSavedEntry(entry, entryId, images) {
       id: image.id || `${entryId}-${index}`,
       src: image.image_url || image.src,
       storagePath: image.storage_path || image.storagePath || '',
+      storage_path: image.storage_path || image.storagePath || '',
     })),
   };
 }
@@ -2089,18 +2093,30 @@ export default function App() {
     if (entryError) throw entryError;
 
     const persistedPhotos = await buildPersistedDiaryPhotos(entryId, changes.photos);
-    const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
-    if (deleteImagesError) throw deleteImagesError;
-
-    if (persistedPhotos.length > 0) {
-      const { error: insertImagesError } = await supabase.from('diary_images').insert(persistedPhotos);
-      if (insertImagesError) throw insertImagesError;
+    if (persistedPhotos.length === 0) {
+      const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
+      if (deleteImagesError) throw deleteImagesError;
+    } else {
+      const { error: deleteImagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId).gte('sort_order', persistedPhotos.length);
+      if (deleteImagesError) throw deleteImagesError;
     }
 
-    const savedPhotos = persistedPhotos.map((photo, index) => ({
-      id: `${entryId}-${index}`,
+    let savedImageRows = [];
+    if (persistedPhotos.length > 0) {
+      const imageRows = persistedPhotos.map(({ id, ...photo }) => photo);
+      const { data, error: insertImagesError } = await supabase
+        .from('diary_images')
+        .upsert(imageRows, { onConflict: 'entry_id,sort_order' })
+        .select('id, image_url, storage_path, sort_order');
+      if (insertImagesError) throw insertImagesError;
+      savedImageRows = (data || imageRows).slice().sort((a, b) => a.sort_order - b.sort_order);
+    }
+
+    const savedPhotos = savedImageRows.map((photo, index) => ({
+      id: photo.id || `${entryId}-${index}`,
       src: photo.image_url,
       storagePath: photo.storage_path,
+      storage_path: photo.storage_path,
     }));
 
     setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
