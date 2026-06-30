@@ -167,6 +167,11 @@ create policy "public update diary comments"
   using (true)
   with check (true);
 
+drop policy if exists "public delete diary comments" on public.diary_comments;
+create policy "public delete diary comments"
+  on public.diary_comments for delete
+  using (true);
+
 drop policy if exists "public read diary entry likes" on public.diary_entry_likes;
 create policy "public read diary entry likes"
   on public.diary_entry_likes for select

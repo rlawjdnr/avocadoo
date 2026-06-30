@@ -2129,8 +2129,30 @@ export default function App() {
       return;
     }
 
-    const { error } = await supabase.from('diary_entries').delete().eq('id', entryId);
+    const { data: comments, error: commentsReadError } = await supabase.from('diary_comments').select('id').eq('entry_id', entryId);
+    if (commentsReadError) throw commentsReadError;
+
+    const commentIds = (comments || []).map((comment) => comment.id);
+    if (commentIds.length > 0) {
+      const { error: commentLikesError } = await supabase.from('diary_comment_likes').delete().in('comment_id', commentIds);
+      if (commentLikesError) throw commentLikesError;
+    }
+
+    const { error: commentsError } = await supabase.from('diary_comments').delete().eq('entry_id', entryId);
+    if (commentsError) throw commentsError;
+
+    const { error: entryLikesError } = await supabase.from('diary_entry_likes').delete().eq('entry_id', entryId);
+    if (entryLikesError) throw entryLikesError;
+
+    const { error: imagesError } = await supabase.from('diary_images').delete().eq('entry_id', entryId);
+    if (imagesError) throw imagesError;
+
+    const { data: deletedRows, error } = await supabase.from('diary_entries').delete().eq('id', entryId).select('id');
     if (error) throw error;
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error('일기를 삭제하지 못했어요. Supabase 삭제 정책을 확인해주세요.');
+    }
+
     setEntriesAndCache((current) => current.filter((entry) => entry.id !== entryId));
     setSelectedEntryId(null);
   }
