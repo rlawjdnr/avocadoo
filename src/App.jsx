@@ -342,7 +342,7 @@ function PushPrompt({ permission = 'default', isSupported = true, isConfigured =
         <button className="push-prompt-secondary" type="button" onClick={onDismiss}>
           나중에
         </button>
-        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving || isBlocked}>
+        <button className="push-prompt-primary" type="button" onClick={isBlocked ? onDismiss : onEnable} disabled={isSaving || !isConfigured}>
           {isBlocked ? '확인' : '알림 켜기'}
         </button>
       </div>
