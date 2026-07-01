@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { animate, motion, useMotionValue } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
 const assets = {
@@ -13,7 +13,11 @@ const assets = {
   plus: './assets/icon-plus.svg',
   down: './assets/icon-down.svg',
   avatar: './assets/icon-avatar.svg',
+  avatarHemin: './assets/icon-avatar-hemin.svg',
+  avatarJeong: './assets/icon-avatar-jeong.svg',
+  avatarJeongNeutral: './assets/icon-avatar-jeong-neutral.svg',
   heart: './assets/icon-heart.svg',
+  heartBadge: './assets/icon-heart-badge.svg',
   likeOutline: './assets/icon-like-outline.svg',
   likeFilled: './assets/icon-like-filled.svg',
   comment: './assets/icon-comment.svg',
@@ -22,12 +26,15 @@ const assets = {
   upload: './assets/icon-upload.svg',
   pencil: './assets/icon-pencil.svg',
   photoDelete: './assets/icon-photo-delete.svg',
+  letterName: './assets/letter-name.svg',
 };
 
 const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111-1111-4111-8111-111111111111';
 const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
 const currentMemberNickname = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_NICKNAME || '정정욱';
 const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
+const memberNicknames = ['혜민민', '정정욱'];
+const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 
 const uploadButtonRadiusSpring = {
   type: 'spring',
@@ -167,6 +174,51 @@ const screenPushShadowTransition = {
   ...screenPushTransition,
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
+let homeLetterEntryWasRead = false;
+const homeEntrySpring = {
+  type: 'spring',
+  stiffness: 200,
+  damping: 30,
+};
+const homeEntryOpacityTransition = {
+  duration: 0.2,
+  ease: 'easeOut',
+};
+const homeEntryVariants = {
+  hidden: { opacity: 0, y: 400 },
+  visible: (order = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      y: {
+        ...homeEntrySpring,
+        delay: order * 0.03,
+      },
+      opacity: {
+        ...homeEntryOpacityTransition,
+        delay: order * 0.03,
+      },
+    },
+  }),
+};
+const floatingHomeEntryVariants = {
+  hidden: { opacity: 0, x: '-50%', y: 400 },
+  visible: (order = 0) => ({
+    opacity: 1,
+    x: '-50%',
+    y: 0,
+    transition: {
+      y: {
+        ...homeEntrySpring,
+        delay: order * 0.03,
+      },
+      opacity: {
+        ...homeEntryOpacityTransition,
+        delay: order * 0.03,
+      },
+    },
+  }),
+};
 
 function getViewportWidth() {
   if (typeof window === 'undefined') return defaultScreenPushDistance;
@@ -209,6 +261,18 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
     }
   }
 
+  if (transitionKind === 'home-to-letter') {
+    if (screenName === 'home') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'letter') {
+      return {
+        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
+        animate: { x: 0, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
   if (transitionKind === 'list-to-comment') {
     if (screenName === 'list') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'comment') {
@@ -224,6 +288,18 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
   if (transitionKind === 'list-to-home') {
     if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
+      return {
+        initial: { boxShadow: coveringPageShadow },
+        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'letter-to-home') {
+    if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'letter') {
       return {
         initial: { boxShadow: coveringPageShadow },
         animate: { x: screenPushDistance, boxShadow: restingPageShadow },
@@ -399,6 +475,19 @@ const sampleEntries = [
   },
 ];
 
+const anniversaryLetterParagraphs = [
+  '안녕 혜민아 ㅎㅎ 이것저것 고맙고, 사랑하는 마음이 뒤엉켜서 어떤 말부터 해야할 지 고르기가 어렵네 ㅎ. 혜민이에게 표현하고 싶은 사랑과 또 고마운 점이 정말 많거든.',
+  '난 처음 100일은 혜민이의 이쁜 얼굴을 보면서 설렜다면, 그 이후에 나에게 새로 생긴 설렘은 혜민이의 이쁜 마음이였던 것 같아. 혜민이는 너무 따뜻&솔직하고 또 매순간 지혜로운 사람이어서 처음으로 이런 사람과 결혼하면 정말 행복하게 잘 살 수 있을 것 같다는 감정을 배웠어. 이 감정은 마치 내가 비혼주의자였어도 혜민이를 만났다면 결혼을 생각해보지 않을까 하는 크기였거든. 요즘은 혜민이 덕분에 안정적이고 든든한 마음이 들어서, 불안정한 상황 속에서도 행복하게 살고 있다고 느껴.',
+  '그래서인지 내가 혜민이에게 가장 고마운 건, 내가 정말 사랑하는 사람이 나만큼이나 사랑해준다는 사실 같아. 절대 당연하지 않다고 생각하거든. 어떤 평행우주에서는 내가 이렇게 좋은 사람이라고 생각하는 김혜민이 내가 전혀 취향이 아닌 세계도 있는 거 잖아. 정말 생각만 해도 무섭고 끔찍하다ㅜ. 근데 기적같이 김혜민이 나만큼이나 나를 사랑해주고 표현해주어서 너무 행복하고 고마운 마음이야. 앞으로도 혜민이가 나한테 표현해주는 사랑을 절대 당연하다고 여기지 않고, 감사하다고 느끼면서 혜민이한테 되돌려줄게!',
+  '그러니까 말이야 혹시 종종 우리 관계에 불안한 마음이 든다면, 언제든 주저하지 않고 나에게 이야기를 꺼내주면 좋겠어. 적어도 우리 둘의 관계에서는 혜민이가 외로움을 느끼지 않았으면 좋겠어. 어떤 이유이든 혜민이가 그렇게 느꼈다고 이야기해주면 같이 울고 같이 해결할게. 그러니까 꼭 나한테 말해줘 알겠지! 우리처럼 정말 잘 맞기도 어렵다고 생각하지만 그 와중에도 분명 혜민이랑 나랑 다른 점도 있고 좀처럼 좁혀지지 않는 취향 같은 것들도 있다고 느껴. 하지만 그것도 혜민이와의 관계보다 우선하지 않으니까, 항상 나한테 우리 관계에 부정적인 감정이 든다면 혼자 힘들어하지말고 나랑 나누어주면 좋겠어. 내가 해결할텐까 ㅎ',
+  '내가 꼭 1주년에는 아보카도 완성해서 선물하고 싶어서 한 일주일 정말 틈틈히 만들고 썸원에서 아보카도로 열심히 옮겼어. 근데 그러면서 우리가 데이트한 날들 하루하루 보는데 정말 소중하고, 아름답더라고 ㅎㅎ. 더 사진으로 많이 남기고 기록해야 겠다는 마음이 들었어.',
+  '우리 앞으로 1년은 더 재미있고 인상 깊은 일들을 많이 만들자! 혜민이가 좋아하는 2박 3일 펜션 여행도 더 자주 가고, 아무도 우리를 모르는 해외로 떠나서 거리에서 뽀뽀도 해보자!ㅎㅋ킄 2026년 7월 1일부터 2027년 7월 1일까지는 지금까지의 1년과는 완전 다른 상황일 것 같아서 더 기대되는 것 같아. 서로 적절히 자리도 잡았을테고 둘다 일정한 수입이 있다면 더 이것저것 해보고 싶은 게 많다 나는 ㅎ. 예를 들면 혜민이랑 잔나비, 검정치마 콘서트도 가고 싶고, 제주도 가서 펜션에서 차빌려서 여기저기 돌아다녀도 보고 싶고 그래.',
+  '내가 저번 편지에서 3년은 내가 책임지고 가겠다고 말했는데, 1년 2년 3년이 무색할 정도로 재밌고 행복한 시간이 될 수 있게 노력할게.',
+  '마음의 변화는 당연히 없고 그때와 다른게 있다면 조금 더 큰 확신이 생겼어 ㅎ',
+  '1년 동안 덕분에 너무 행복하고 풍족한 마음이 들었어. 고맙고 너무너무 사랑해 김혜민!!',
+  '앞으로 1년도 잘 부탁해.',
+];
+
 function getPhotoSrc(photo) {
   if (!photo) return '';
   if (typeof photo === 'string') return assets.photos[photo] || photo;
@@ -448,6 +537,44 @@ function writeLocalEntries(entries) {
   } catch {
     // Ignore quota/private-mode failures; Supabase remains the source of truth when configured.
   }
+}
+
+function normalizeSelectedNickname(nickname) {
+  if (memberNicknames.includes(nickname)) return nickname;
+  if (memberNicknames.includes(currentMemberNickname)) return currentMemberNickname;
+  return memberNicknames[1];
+}
+
+function getMemberAvatarSrc(nickname) {
+  return normalizeSelectedNickname(nickname) === '혜민민' ? assets.avatarJeongNeutral : assets.avatarHemin;
+}
+
+function readSelectedNickname() {
+  if (typeof window === 'undefined') return normalizeSelectedNickname(currentMemberNickname);
+
+  try {
+    return normalizeSelectedNickname(window.localStorage.getItem(selectedNicknameStorageKey));
+  } catch {
+    return normalizeSelectedNickname(currentMemberNickname);
+  }
+}
+
+function writeSelectedNickname(nickname) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(selectedNicknameStorageKey, normalizeSelectedNickname(nickname));
+  } catch {
+    // Ignore storage failures; the in-memory selection still applies for this session.
+  }
+}
+
+function readHomeLetterEntrySeen() {
+  return homeLetterEntryWasRead;
+}
+
+function writeHomeLetterEntrySeen() {
+  homeLetterEntryWasRead = true;
 }
 
 function readFileAsDataUrl(file) {
@@ -523,13 +650,21 @@ function mapDiaryEntry(row) {
 
 function applyEntriesToWeeks(weeks, entries) {
   return weeks.map((week) => {
+    const weekEntries = entries
+      .filter((entry) => entry.weekId === week.id)
+      .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
     const photos = entries
       .filter((entry) => entry.weekId === week.id && entry.photos.length > 0)
       .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`))
       .map((entry) => entry.photos[0])
       .slice(0, 4);
+    const locations = [...new Set(weekEntries.map((entry) => (entry.location || '').trim()).filter(Boolean))].slice(0, 2);
+    const label =
+      weekEntries.length === 0
+        ? '안 만난 주ㅠㅠ'
+        : `${locations.length > 0 ? locations.join(',') : '어딘가'}에서 ${weekEntries.length}번 만남`;
 
-    return { ...week, photos };
+    return { ...week, label, photos };
   });
 }
 
@@ -638,37 +773,80 @@ function PhotoStack({ onAdd, photos }) {
   );
 }
 
-function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false, bigWidth = uploadButtonSize.big }) {
+function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false, bigWidth = uploadButtonSize.big, entranceOrder = null }) {
   const [isPressed, setIsPressed] = useState(false);
   const releasePress = () => setIsPressed(false);
+  const button = (
+    <motion.button
+      className={className}
+      type="button"
+      initial={reverseFromBig ? { borderRadius: uploadButtonRadius.big, width: bigWidth, y: -9.5 } : false}
+      animate={{ borderRadius: uploadButtonRadius.small, scale: isPressed ? 0.97 : 1, width: uploadButtonSize.small, y: 0 }}
+      transition={{ ...uploadButtonTransition, scale: isPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring }}
+      onPointerDown={() => setIsPressed(true)}
+      onPointerUp={releasePress}
+      onPointerCancel={releasePress}
+      onPointerLeave={releasePress}
+      onClick={() => onNavigate('upload')}
+    >
+      <img src={assets.upload} alt="" />
+      <motion.span className="upload-button-label" initial={reverseFromBig ? { fontSize: 17 } : false} animate={{ fontSize: 16 }} transition={uploadButtonSizeSpring}>
+        올리기
+      </motion.span>
+    </motion.button>
+  );
 
   return (
-    <span className="floating-upload-anchor">
-      <motion.button
-        className={className}
-        type="button"
-        initial={reverseFromBig ? { borderRadius: uploadButtonRadius.big, width: bigWidth, y: -9.5 } : false}
-        animate={{ borderRadius: uploadButtonRadius.small, scale: isPressed ? 0.97 : 1, width: uploadButtonSize.small, y: 0 }}
-        transition={{ ...uploadButtonTransition, scale: isPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring }}
-        onPointerDown={() => setIsPressed(true)}
-        onPointerUp={releasePress}
-        onPointerCancel={releasePress}
-        onPointerLeave={releasePress}
-        onClick={() => onNavigate('upload')}
-      >
-        <img src={assets.upload} alt="" />
-        <motion.span className="upload-button-label" initial={reverseFromBig ? { fontSize: 17 } : false} animate={{ fontSize: 16 }} transition={uploadButtonSizeSpring}>
-          올리기
-        </motion.span>
-      </motion.button>
-    </span>
+    <motion.span
+      className="floating-upload-anchor"
+      custom={entranceOrder ?? 0}
+      variants={entranceOrder === null ? undefined : floatingHomeEntryVariants}
+      initial={entranceOrder === null ? false : 'hidden'}
+      animate={entranceOrder === null ? undefined : 'visible'}
+    >
+      {button}
+    </motion.span>
   );
 }
 
-function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth }) {
+function HomeLetterEntry({ onRead, onClose }) {
+  return (
+    <section className="home-letter-entry" aria-label="새 편지">
+      <motion.div className="letter-paper-preview" custom={0} variants={homeEntryVariants} initial="hidden" animate="visible">
+        <div className="letter-sheet letter-sheet-back" />
+        <div className="letter-sheet letter-sheet-front" />
+        <button className="letter-entry-close" type="button" aria-label="편지 진입점 닫기" onClick={onClose}>
+          <span aria-hidden="true" />
+        </button>
+        <div className="letter-paper-copy" aria-hidden="true">
+          <img className="letter-name-asset" src={assets.letterName} alt="" />
+          <span>안녕 혜민아 ㅎㅎ 이것저것 고맙고,</span>
+          <span>사랑하는 마음이 뒤엉켜서</span>
+          <span>어떤 말부터</span>
+        </div>
+      </motion.div>
+      <div className="letter-entry-copy">
+        <motion.p custom={1} variants={homeEntryVariants} initial="hidden" animate="visible">
+          정정욱님이
+        </motion.p>
+        <motion.h1 custom={2} variants={homeEntryVariants} initial="hidden" animate="visible">
+          <span>혜민민님에게</span>
+          <span>편지를 보냈어요!</span>
+        </motion.h1>
+        <motion.button className="letter-read-button" type="button" custom={3} variants={homeEntryVariants} initial="hidden" animate="visible" onClick={onRead}>
+          편지 읽기
+        </motion.button>
+      </div>
+    </section>
+  );
+}
+
+function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname }) {
   const [isPressed, setIsPressed] = useState(false);
+  const [isCouplePressed, setIsCouplePressed] = useState(false);
   const monthInputRef = useRef(null);
   const releasePress = () => setIsPressed(false);
+  const releaseCouplePress = () => setIsCouplePressed(false);
 
   function openMonthPicker() {
     const input = monthInputRef.current;
@@ -716,22 +894,43 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth }) {
           onChange={(event) => onSelectMonth(event.target.value)}
         />
       </motion.button>
-      <div className="couple-state" aria-label="커플 상태">
-        <img src={assets.avatar} alt="" />
-        <img src={assets.avatar} alt="" />
+      <motion.button
+        className="couple-state"
+        type="button"
+        aria-label="닉네임 선택"
+        initial={false}
+        animate={{ scale: isCouplePressed ? 0.94 : 1 }}
+        transition={isCouplePressed ? polaroidPressSpring : polaroidReleaseSpring}
+        onPointerDown={() => setIsCouplePressed(true)}
+        onPointerUp={releaseCouplePress}
+        onPointerCancel={releaseCouplePress}
+        onPointerLeave={releaseCouplePress}
+        onClick={onOpenNicknamePicker}
+      >
+        <img className={normalizeSelectedNickname(currentNickname) === '정정욱' ? 'couple-avatar-selected' : ''} src={assets.avatarHemin} alt="" />
+        <img className={normalizeSelectedNickname(currentNickname) === '혜민민' ? 'couple-avatar-selected' : ''} src={assets.avatarJeongNeutral} alt="" />
         <span>
-          <img src={assets.heart} alt="" />
+          <img src={assets.heartBadge} alt="" />
         </span>
-      </div>
+      </motion.button>
     </header>
   );
 }
 
-function HomeMonthPage({ weeks, onSelectWeek }) {
+function HomeMonthPage({ weeks, onSelectWeek, showLetterEntry = false }) {
   return (
     <div className="home-month-page">
-      <div className="week-list">
-        {weeks.map((week) => {
+      <motion.div
+        className="week-list"
+        initial={false}
+        animate={{
+          top: showLetterEntry ? 427 : 63,
+          height: `calc(100% - ${showLetterEntry ? 427 : 63}px)`,
+          paddingTop: showLetterEntry ? 0 : 12,
+        }}
+        transition={screenPushTransition}
+      >
+        {weeks.map((week, index) => {
           const hasDiary = week.photos.length > 0;
           const content = (
             <>
@@ -745,29 +944,110 @@ function HomeMonthPage({ weeks, onSelectWeek }) {
 
           if (hasDiary) {
             return (
-              <button className="week-card week-card-clickable" type="button" key={week.id} onClick={() => onSelectWeek(week)}>
+              <motion.button
+                className="week-card week-card-clickable"
+                type="button"
+                key={week.id}
+                custom={4 + index}
+                variants={showLetterEntry && index < 2 ? homeEntryVariants : undefined}
+                initial={showLetterEntry && index < 2 ? 'hidden' : false}
+                animate={showLetterEntry && index < 2 ? 'visible' : undefined}
+                onClick={() => onSelectWeek(week)}
+              >
                 {content}
-              </button>
+              </motion.button>
             );
           }
 
           return (
-            <article className="week-card" key={week.id}>
+            <motion.article
+              className="week-card"
+              key={week.id}
+              custom={4 + index}
+              variants={showLetterEntry && index < 2 ? homeEntryVariants : undefined}
+              initial={showLetterEntry && index < 2 ? 'hidden' : false}
+              animate={showLetterEntry && index < 2 ? 'visible' : undefined}
+            >
               {content}
-            </article>
+            </motion.article>
           );
         })}
-      </div>
+      </motion.div>
     </div>
   );
 }
 
-function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance }) {
+function NicknamePickerSheet({ selectedNickname, onSelect, onConfirm, onDismiss }) {
+  const [draftNickname, setDraftNickname] = useState(() => normalizeSelectedNickname(selectedNickname));
+
+  useEffect(() => {
+    setDraftNickname(normalizeSelectedNickname(selectedNickname));
+  }, [selectedNickname]);
+
+  return (
+    <div className="nickname-picker-layer" role="dialog" aria-modal="true" aria-labelledby="nickname-picker-title">
+      <motion.button
+        className="nickname-picker-dim"
+        type="button"
+        aria-label="닉네임 선택 닫기"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        onClick={onDismiss}
+      />
+      <motion.section
+        className="nickname-picker-sheet"
+        initial={{ y: 292 }}
+        animate={{ y: 0 }}
+        exit={{ y: 292 }}
+        transition={screenPushTransition}
+      >
+        <div className="nickname-picker-content">
+          <h2 id="nickname-picker-title">누구이신가요?</h2>
+          <div className="nickname-options">
+            {memberNicknames.map((nickname) => {
+              const isSelected = draftNickname === nickname;
+              return (
+                <motion.button
+                  className={`nickname-option ${isSelected ? 'nickname-option-selected' : ''}`}
+                  type="button"
+                  key={nickname}
+                  initial={false}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setDraftNickname(nickname)}
+                >
+                  <img src={getMemberAvatarSrc(nickname)} alt="" />
+                  <span>{nickname}</span>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="nickname-picker-cta">
+          <button
+            className="nickname-confirm-button"
+            type="button"
+            onClick={() => {
+              onSelect(draftNickname);
+              onConfirm();
+            }}
+          >
+            확인
+          </button>
+        </div>
+      </motion.section>
+    </div>
+  );
+}
+
+function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance, currentNickname = currentMemberNickname, onOpenNicknamePicker, onOpenLetter }) {
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
   const monthGesture = useRef(null);
   const monthAnimation = useRef(null);
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
+  const [showLetterEntry, setShowLetterEntry] = useState(() => !readHomeLetterEntrySeen());
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
   const activeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(activeMonthDate), entries), [activeMonthDate, entries]);
@@ -959,15 +1239,29 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     moveToMonth(nextMonthIndex, monthViewportRef.current);
   }
 
+  function handleReadLetterEntry() {
+    writeHomeLetterEntrySeen();
+    setShowLetterEntry(false);
+    onOpenLetter();
+  }
+
+  function handleCloseLetterEntry() {
+    writeHomeLetterEntrySeen();
+    setShowLetterEntry(false);
+  }
+
   return (
-    <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
+    <motion.section className={`phone home-screen ${showLetterEntry ? 'home-screen-with-letter-entry' : ''}`} {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader
         monthDate={activeMonthDate}
         minMonth={monthPages[0]?.key}
         maxMonth={monthPages[monthPages.length - 1]?.key}
         onSelectMonth={handleSelectMonth}
+        onOpenNicknamePicker={onOpenNicknamePicker}
+        currentNickname={currentNickname}
       />
+      {showLetterEntry ? <HomeLetterEntry onRead={handleReadLetterEntry} onClose={handleCloseLetterEntry} /> : null}
       <div
         className="home-month-viewport"
         ref={monthViewportRef}
@@ -985,12 +1279,39 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
               key={month.key}
               weeks={month.key === getMonthKey(activeMonthDate) ? activeWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
               onSelectWeek={handleSelectWeek}
+              showLetterEntry={showLetterEntry}
             />
           ))}
         </motion.div>
       </div>
-      {activeWeeks[0] ? <UploadButton reverseFromBig={returningFromUpload} bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)} onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')} /> : null}
-      <CoveredPageDim visible={transitionKind === 'home-to-list'} />
+      {activeWeeks[0] ? (
+        <UploadButton
+          reverseFromBig={returningFromUpload}
+          bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)}
+          entranceOrder={showLetterEntry ? 6 : null}
+          onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')}
+        />
+      ) : null}
+      <CoveredPageDim visible={transitionKind === 'home-to-list' || transitionKind === 'home-to-letter'} />
+    </motion.section>
+  );
+}
+
+function LetterScreen({ active = true, transitionKind, screenPushDistance, onNavigate }) {
+  return (
+    <motion.section className="phone letter-screen" {...screenMotionProps('letter', transitionKind, active, screenPushDistance)}>
+      <img className="paper-bg" src={assets.bg} alt="" />
+      <header className="letter-nav">
+        <button className="icon-back" type="button" onClick={() => onNavigate('home')} aria-label="뒤로" />
+      </header>
+      <main className="letter-page-content">
+        <img className="letter-page-name" src={assets.letterName} alt="혜민에게" />
+        <div className="letter-page-body">
+          {anniversaryLetterParagraphs.map((paragraph, index) => (
+            <p key={index}>{paragraph}</p>
+          ))}
+        </div>
+      </main>
     </motion.section>
   );
 }
@@ -1120,11 +1441,12 @@ function DiaryCardBody({ entry, onOpen }) {
         },
       }
     : {};
+  const writerAvatar = getMemberAvatarSrc(entry.nickname);
 
   return (
     <div className={onOpen ? 'diary-body diary-body-clickable' : 'diary-body'} {...bodyProps}>
       <div className="writer">
-        <img src={assets.avatar} alt="" />
+        <img src={writerAvatar} alt="" />
         <strong>{entry.nickname}</strong>
       </div>
       <p>{entry.text}</p>
@@ -1207,7 +1529,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
   return (
     <div className="comment-row">
       <div className="comment-copy">
-        <img src={assets.avatar} alt="" />
+        <img src={getMemberAvatarSrc(comment.nickname)} alt="" />
         <div>
           <strong>{comment.nickname}</strong>
           <p>{comment.text}</p>
@@ -1225,7 +1547,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
   );
 }
 
-function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance }) {
+function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
   const comments = entry?.comments || [];
 
@@ -1253,7 +1575,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       </div>
       <form className="reply-composer" onSubmit={submitReply}>
         <div className="reply-field">
-          <img src={assets.avatar} alt="" />
+          <img src={getMemberAvatarSrc(currentNickname)} alt="" />
           <input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="답글 달기..." aria-label="답글 달기" />
           <button className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'} type="submit" aria-label="답글 보내기">
             <img src={assets.send} alt="" />
@@ -1917,6 +2239,8 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [shouldOpenUploadDatePicker, setShouldOpenUploadDatePicker] = useState(false);
+  const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
+  const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
@@ -1957,21 +2281,25 @@ export default function App() {
     setScreenTransition(
       screen === 'home' && nextScreen === 'list'
         ? 'home-to-list'
+        : screen === 'home' && nextScreen === 'letter'
+          ? 'home-to-letter'
         : screen === 'list' && nextScreen === 'home'
           ? 'list-to-home'
-          : screen === 'list' && nextScreen === 'comment'
-            ? 'list-to-comment'
-            : screen === 'comment' && nextScreen === 'list'
-              ? 'comment-to-list'
-              : screen === 'list' && nextScreen === 'edit'
-                ? 'list-to-edit'
-                : screen === 'comment' && nextScreen === 'edit'
-                  ? 'comment-to-edit'
-                  : screen === 'edit' && nextScreen === 'comment'
-                    ? 'edit-to-comment'
-                    : screen === 'edit' && nextScreen === 'list'
-                      ? 'edit-to-list'
-                      : 'none'
+          : screen === 'letter' && nextScreen === 'home'
+            ? 'letter-to-home'
+            : screen === 'list' && nextScreen === 'comment'
+              ? 'list-to-comment'
+              : screen === 'comment' && nextScreen === 'list'
+                ? 'comment-to-list'
+                : screen === 'list' && nextScreen === 'edit'
+                  ? 'list-to-edit'
+                  : screen === 'comment' && nextScreen === 'edit'
+                    ? 'comment-to-edit'
+                    : screen === 'edit' && nextScreen === 'comment'
+                      ? 'edit-to-comment'
+                      : screen === 'edit' && nextScreen === 'list'
+                        ? 'edit-to-list'
+                        : 'none'
     );
     setPreviousScreen(screen);
     setScreen(nextScreen);
@@ -1980,7 +2308,7 @@ export default function App() {
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
-      const savedEntry = buildLocalSavedEntry(entry, entryId);
+      const savedEntry = buildLocalSavedEntry({ ...entry, nickname: selectedNickname }, entryId);
       setEntriesAndCache((current) => [savedEntry, ...current]);
       setSelectedEntryId(entryId);
       return;
@@ -2006,6 +2334,7 @@ export default function App() {
     const savedEntry = buildLocalSavedEntry(
       {
         ...entry,
+        nickname: selectedNickname,
         date: savedRow?.diary_date || entry.date,
         dateLabel: formatDateLabel(savedRow?.diary_date || entry.date),
         weekday: formatWeekday(savedRow?.diary_date || entry.date),
@@ -2038,6 +2367,12 @@ export default function App() {
   function openEditEntry(entry) {
     setSelectedEntryId(entry.id);
     navigate('edit');
+  }
+
+  function selectNickname(nickname) {
+    const nextNickname = normalizeSelectedNickname(nickname);
+    setSelectedNickname(nextNickname);
+    writeSelectedNickname(nextNickname);
   }
 
   async function toggleEntryLike(entryId) {
@@ -2103,7 +2438,7 @@ export default function App() {
 
   async function addComment(entryId, text) {
     const commentId = crypto.randomUUID();
-    const comment = { id: commentId, nickname: currentMemberNickname, text, liked: false, likeCount: 0 };
+    const comment = { id: commentId, nickname: selectedNickname, text, liked: false, likeCount: 0 };
 
     if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
       setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
@@ -2205,10 +2540,11 @@ export default function App() {
     setSelectedEntryId(null);
   }
 
-  const showHome = screen === 'home' || screenTransition === 'home-to-list';
+  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'home-to-letter' || screenTransition === 'letter-to-home';
   const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
+  const showLetter = screen === 'letter' || screenTransition === 'home-to-letter' || screenTransition === 'letter-to-home';
 
   return (
     <div className="screen-stage">
@@ -2222,8 +2558,20 @@ export default function App() {
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
           returningFromUpload={previousScreen === 'upload'}
+          currentNickname={selectedNickname}
           onChangeMonth={changeMonth}
           onSelectWeek={openWeek}
+          onOpenNicknamePicker={() => setIsNicknamePickerOpen(true)}
+          onOpenLetter={() => navigate('letter')}
+        />
+      ) : null}
+      {showLetter ? (
+        <LetterScreen
+          key="letter"
+          active={screen === 'letter'}
+          transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
+          onNavigate={navigate}
         />
       ) : null}
       {showList ? (
@@ -2252,6 +2600,7 @@ export default function App() {
           onToggleCommentLike={toggleCommentLike}
           onAddComment={addComment}
           onEditEntry={openEditEntry}
+          currentNickname={selectedNickname}
         />
       ) : null}
       {showEdit && selectedEntry ? (
@@ -2278,6 +2627,16 @@ export default function App() {
           onNavigate={navigate}
         />
       ) : null}
+      <AnimatePresence>
+        {isNicknamePickerOpen ? (
+          <NicknamePickerSheet
+            selectedNickname={selectedNickname}
+            onSelect={selectNickname}
+            onConfirm={() => setIsNicknamePickerOpen(false)}
+            onDismiss={() => setIsNicknamePickerOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
