@@ -33,7 +33,8 @@ const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111
 const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
 const currentMemberNickname = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_NICKNAME || '정정욱';
 const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
-const webPushVapidPublicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || '';
+const defaultWebPushVapidPublicKey = 'BAo8gRVBc4zCwpkWat48097mHx-eMq_2Lw1dNLgmkIJn7VAz7sSXNdU53Mt5DS2HQmIvlecyq_qDBBxSk7dG3pA';
+const webPushVapidPublicKey = (import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || defaultWebPushVapidPublicKey).trim();
 const memberNicknames = ['혜민민', '정정욱'];
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 
@@ -569,11 +570,13 @@ function writePushPromptDismissed(value) {
 }
 
 function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
+  const normalizedBase64String = base64String.trim();
+  const padding = '='.repeat((4 - (normalizedBase64String.length % 4)) % 4);
+  const base64 = `${normalizedBase64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
 
-  return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)));
+  const bytes = Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)));
+  return bytes.buffer;
 }
 
 async function savePushSubscription(subscription) {
