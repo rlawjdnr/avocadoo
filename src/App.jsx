@@ -33,6 +33,7 @@ const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111
 const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
 const currentMemberNickname = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_NICKNAME || '정정욱';
 const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
+const webPushVapidPublicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || '';
 const memberNicknames = ['혜민민', '정정욱'];
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 
@@ -338,6 +339,30 @@ function CoveredPageDim({ visible = false }) {
   );
 }
 
+function PushPrompt({ onEnable, onDismiss, isSaving = false }) {
+  return (
+    <motion.section
+      className="push-prompt"
+      role="dialog"
+      aria-label="알림 설정"
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 18 }}
+      transition={screenPushTransition}
+    >
+      <span>새 일기와 반응을 알려드릴게요.</span>
+      <div className="push-prompt-actions">
+        <button className="push-prompt-secondary" type="button" onClick={onDismiss}>
+          나중에
+        </button>
+        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving}>
+          알림 켜기
+        </button>
+      </div>
+    </motion.section>
+  );
+}
+
 function padDatePart(value) {
   return String(value).padStart(2, '0');
 }
@@ -477,6 +502,7 @@ function isSupabaseUuid(value) {
 }
 
 const localEntriesStorageKey = 'avocadoo.diary.entries.v1';
+const pushPromptDismissedStorageKey = 'avocadoo.push.prompt.dismissed.v1';
 
 function toStorableEntry(entry) {
   return {
@@ -514,6 +540,98 @@ function writeLocalEntries(entries) {
     window.localStorage.setItem(localEntriesStorageKey, JSON.stringify(entries.map(toStorableEntry)));
   } catch {
     // Ignore quota/private-mode failures; Supabase remains the source of truth when configured.
+  }
+}
+
+function isWebPushSupported() {
+  if (typeof window === 'undefined') return false;
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+function readPushPromptDismissed() {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    return window.localStorage.getItem(pushPromptDismissedStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writePushPromptDismissed(value) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(pushPromptDismissedStorageKey, value ? 'true' : 'false');
+  } catch {
+    // Ignore storage failures; the prompt can still be dismissed in memory.
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+
+  return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)));
+}
+
+async function savePushSubscription(subscription) {
+  if (!hasSupabaseConfig || !subscription) return;
+
+  const subscriptionJson = subscription.toJSON();
+  const { error } = await supabase
+    .from('push_subscriptions')
+    .upsert(
+      {
+        member_id: currentMemberId,
+        endpoint: subscriptionJson.endpoint,
+        p256dh: subscriptionJson.keys?.p256dh,
+        auth: subscriptionJson.keys?.auth,
+        user_agent: navigator.userAgent,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'endpoint' }
+    );
+
+  if (error) throw error;
+}
+
+async function subscribeToWebPush() {
+  if (!hasSupabaseConfig || !webPushVapidPublicKey || !isWebPushSupported()) return 'unsupported';
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return permission;
+
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
+    scope: import.meta.env.BASE_URL,
+  });
+  const existingSubscription = await registration.pushManager.getSubscription();
+  const subscription =
+    existingSubscription ||
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(webPushVapidPublicKey),
+    }));
+
+  await savePushSubscription(subscription);
+  writePushPromptDismissed(true);
+  return 'granted';
+}
+
+async function notifyWebPush(eventType, payload) {
+  if (!hasSupabaseConfig) return;
+
+  const { error } = await supabase.functions.invoke('send-web-push', {
+    body: {
+      eventType,
+      actorMemberId: currentMemberId,
+      ...payload,
+    },
+  });
+
+  if (error) {
+    console.warn('Web push notification failed', error);
   }
 }
 
@@ -2151,10 +2269,19 @@ export default function App() {
   const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [pushPermission, setPushPermission] = useState(() => (isWebPushSupported() ? Notification.permission : 'unsupported'));
+  const [isPushPromptDismissed, setIsPushPromptDismissed] = useState(readPushPromptDismissed);
+  const [isPushSaving, setIsPushSaving] = useState(false);
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
+  const canShowPushPrompt =
+    hasSupabaseConfig &&
+    Boolean(webPushVapidPublicKey) &&
+    isWebPushSupported() &&
+    pushPermission === 'default' &&
+    !isPushPromptDismissed;
 
   function setEntriesAndCache(nextEntriesOrUpdater) {
     setEntries((current) => {
@@ -2196,6 +2323,36 @@ export default function App() {
   useEffect(() => {
     window.history.replaceState({ avocadooScreen: screen }, '', window.location.href);
   }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !webPushVapidPublicKey || !isWebPushSupported() || Notification.permission !== 'granted') return;
+
+    subscribeToWebPush()
+      .then((permission) => setPushPermission(permission))
+      .catch((error) => console.warn('Web push subscription refresh failed', error));
+  }, []);
+
+  async function enablePushNotifications() {
+    setIsPushSaving(true);
+
+    try {
+      const permission = await subscribeToWebPush();
+      setPushPermission(permission);
+      if (permission !== 'granted') {
+        writePushPromptDismissed(true);
+        setIsPushPromptDismissed(true);
+      }
+    } catch (error) {
+      setLoadError(error.message || '알림을 켜지 못했어요.');
+    } finally {
+      setIsPushSaving(false);
+    }
+  }
+
+  function dismissPushPrompt() {
+    writePushPromptDismissed(true);
+    setIsPushPromptDismissed(true);
+  }
 
   function applyNavigation(nextScreen, pushHistory = true) {
     const currentScreen = screenRef.current;
@@ -2305,6 +2462,7 @@ export default function App() {
 
     setEntriesAndCache((current) => [savedEntry, ...current]);
     setSelectedEntryId(entryId);
+    void notifyWebPush('diary_created', { entryId });
   }
 
   function changeMonth(nextMonthDate) {
@@ -2356,6 +2514,10 @@ export default function App() {
       setLoadError(error.message);
       applyLikeState(entry.liked, entry.likeCount || 0);
       return;
+    }
+
+    if (nextLiked) {
+      void notifyWebPush('diary_liked', { entryId });
     }
   }
 
@@ -2421,6 +2583,7 @@ export default function App() {
     }
 
     setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
+    void notifyWebPush('comment_created', { entryId, commentId });
   }
 
   async function updateEntry(entryId, changes) {
@@ -2508,6 +2671,15 @@ export default function App() {
   return (
     <div className="screen-stage">
       {loadError ? <div className="load-error">{loadError}</div> : null}
+      <AnimatePresence>
+        {canShowPushPrompt ? (
+          <PushPrompt
+            onEnable={enablePushNotifications}
+            onDismiss={dismissPushPrompt}
+            isSaving={isPushSaving}
+          />
+        ) : null}
+      </AnimatePresence>
       {showHome ? (
         <Home
           key="home"

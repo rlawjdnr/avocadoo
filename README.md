@@ -19,6 +19,7 @@ VITE_SUPABASE_COUPLE_SPACE_ID=11111111-1111-4111-8111-111111111111
 VITE_SUPABASE_CURRENT_MEMBER_ID=22222222-2222-4222-8222-222222222221
 VITE_SUPABASE_CURRENT_MEMBER_NICKNAME=정정욱
 VITE_SUPABASE_STORAGE_BUCKET=diary-images
+VITE_WEB_PUSH_VAPID_PUBLIC_KEY=your-vapid-public-key
 ```
 
 ## Supabase
@@ -31,6 +32,7 @@ Supabase SQL Editor에서 `supabase/schema.sql`을 실행하면 아래 리소스
 - 멤버별 반응 테이블: `diary_entry_likes`, `diary_comment_likes`
 - 공개 Storage bucket: `diary-images`
 - 기본 커플 공간과 멤버 2명: `정정욱`, `혜민민`
+- 웹 푸시 구독 테이블: `push_subscriptions`
 
 닉네임 생성 플로우가 아직 없어서 앱의 현재 작성자는 `.env`의 `VITE_SUPABASE_CURRENT_MEMBER_ID`와 `VITE_SUPABASE_CURRENT_MEMBER_NICKNAME`으로 고정합니다. 기본값은 `정정욱`입니다.
 
@@ -41,6 +43,25 @@ VITE_SUPABASE_CURRENT_MEMBER_ID=22222222-2222-4222-8222-222222222222
 VITE_SUPABASE_CURRENT_MEMBER_NICKNAME=혜민민
 ```
 
+## Web Push
+
+브라우저 웹 푸시는 Supabase Edge Function `send-web-push`에서 발송합니다.
+
+1. VAPID 키를 생성합니다.
+2. 프론트엔드 `.env`에 `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`를 넣습니다.
+3. Supabase Edge Function secret에 아래 값을 넣습니다.
+
+```bash
+WEB_PUSH_VAPID_PUBLIC_KEY=your-vapid-public-key
+WEB_PUSH_VAPID_PRIVATE_KEY=your-vapid-private-key
+WEB_PUSH_VAPID_SUBJECT=mailto:you@example.com
+PUBLIC_SITE_URL=https://gimjeong-uk.github.io/avocadoo/
+```
+
+4. `supabase/functions/send-web-push`를 배포합니다.
+
+일기를 등록하면 같은 커플 공간의 다른 멤버에게, 좋아요와 댓글은 해당 일기 작성자에게 푸시가 발송됩니다.
+
 ## GitHub Pages Deployment
 
 배포는 `.github/workflows/deploy.yml`에서 GitHub Pages Actions로 실행됩니다.
@@ -49,6 +70,7 @@ GitHub repository secrets에 아래 값을 등록해야 합니다.
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`
 
 GitHub 저장소의 Pages 설정에서 source를 `GitHub Actions`로 선택하면 `main` 브랜치 push 시 자동 배포됩니다.
 
