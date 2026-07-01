@@ -340,7 +340,9 @@ function CoveredPageDim({ visible = false }) {
   );
 }
 
-function PushPrompt({ onEnable, onDismiss, isSaving = false }) {
+function PushPrompt({ permission = 'default', onEnable, onDismiss, isSaving = false }) {
+  const isDenied = permission === 'denied';
+
   return (
     <motion.section
       className="push-prompt"
@@ -351,12 +353,12 @@ function PushPrompt({ onEnable, onDismiss, isSaving = false }) {
       exit={{ opacity: 0, y: 18 }}
       transition={screenPushTransition}
     >
-      <span>새 일기와 반응을 알려드릴게요.</span>
+      <span>{isDenied ? '브라우저 설정에서 알림을 허용해주세요.' : '새 일기와 반응을 알려드릴게요.'}</span>
       <div className="push-prompt-actions">
         <button className="push-prompt-secondary" type="button" onClick={onDismiss}>
           나중에
         </button>
-        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving}>
+        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving || isDenied}>
           알림 켜기
         </button>
       </div>
@@ -503,7 +505,6 @@ function isSupabaseUuid(value) {
 }
 
 const localEntriesStorageKey = 'avocadoo.diary.entries.v1';
-const pushPromptDismissedStorageKey = 'avocadoo.push.prompt.dismissed.v1';
 
 function toStorableEntry(entry) {
   return {
@@ -547,26 +548,6 @@ function writeLocalEntries(entries) {
 function isWebPushSupported() {
   if (typeof window === 'undefined') return false;
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-}
-
-function readPushPromptDismissed() {
-  if (typeof window === 'undefined') return false;
-
-  try {
-    return window.localStorage.getItem(pushPromptDismissedStorageKey) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function writePushPromptDismissed(value) {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(pushPromptDismissedStorageKey, value ? 'true' : 'false');
-  } catch {
-    // Ignore storage failures; the prompt can still be dismissed in memory.
-  }
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -621,7 +602,6 @@ async function subscribeToWebPush() {
     }));
 
   await savePushSubscription(subscription);
-  writePushPromptDismissed(true);
   return 'granted';
 }
 
@@ -2276,7 +2256,7 @@ export default function App() {
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [pushPermission, setPushPermission] = useState(() => (isWebPushSupported() ? Notification.permission : 'unsupported'));
-  const [isPushPromptDismissed, setIsPushPromptDismissed] = useState(readPushPromptDismissed);
+  const [isPushPromptDismissed, setIsPushPromptDismissed] = useState(false);
   const [isPushSaving, setIsPushSaving] = useState(false);
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
@@ -2286,7 +2266,7 @@ export default function App() {
     hasSupabaseConfig &&
     Boolean(webPushVapidPublicKey) &&
     isWebPushSupported() &&
-    pushPermission === 'default' &&
+    pushPermission !== 'granted' &&
     !isPushPromptDismissed;
 
   function setEntriesAndCache(nextEntriesOrUpdater) {
@@ -2344,10 +2324,7 @@ export default function App() {
     try {
       const permission = await subscribeToWebPush();
       setPushPermission(permission);
-      if (permission !== 'granted') {
-        writePushPromptDismissed(true);
-        setIsPushPromptDismissed(true);
-      }
+      setIsPushPromptDismissed(permission === 'granted');
     } catch (error) {
       setLoadError(error.message || '알림을 켜지 못했어요.');
     } finally {
@@ -2356,7 +2333,6 @@ export default function App() {
   }
 
   function dismissPushPrompt() {
-    writePushPromptDismissed(true);
     setIsPushPromptDismissed(true);
   }
 
@@ -2680,6 +2656,7 @@ export default function App() {
       <AnimatePresence>
         {canShowPushPrompt ? (
           <PushPrompt
+            permission={pushPermission}
             onEnable={enablePushNotifications}
             onDismiss={dismissPushPrompt}
             isSaving={isPushSaving}
