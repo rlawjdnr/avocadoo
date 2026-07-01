@@ -176,6 +176,18 @@ const screenPushShadowTransition = {
   ...screenPushTransition,
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
+const backSwipeEdgeSize = 24;
+const backSwipeDistanceThreshold = 72;
+const backSwipeVelocityThreshold = 0.45;
+
+function getBackScreen(screen, previousScreen) {
+  if (screen === 'list') return 'home';
+  if (screen === 'letter') return 'home';
+  if (screen === 'comment') return 'list';
+  if (screen === 'edit') return previousScreen === 'comment' ? 'comment' : 'list';
+  if (screen === 'upload') return previousScreen === 'list' ? 'list' : 'home';
+  return null;
+}
 
 function getViewportWidth() {
   if (typeof window === 'undefined') return defaultScreenPushDistance;
@@ -230,9 +242,33 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
     }
   }
 
+  if (transitionKind === 'home-to-upload' || transitionKind === 'list-to-upload') {
+    if (screenName === 'home' || screenName === 'list') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'upload') {
+      return {
+        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
+        animate: { x: 0, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
   if (transitionKind === 'list-to-home') {
     if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
+      return {
+        initial: { boxShadow: coveringPageShadow },
+        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'upload-to-home' || transitionKind === 'upload-to-list') {
+    if (screenName === 'home' || screenName === 'list') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'upload') {
       return {
         initial: { boxShadow: coveringPageShadow },
         animate: { x: screenPushDistance, boxShadow: restingPageShadow },
@@ -2118,6 +2154,7 @@ export default function App() {
   const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const backSwipeGesture = useRef(null);
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
 
@@ -2157,26 +2194,108 @@ export default function App() {
     setScreenTransition(
       screen === 'home' && nextScreen === 'list'
         ? 'home-to-list'
+        : screen === 'home' && nextScreen === 'upload'
+          ? 'home-to-upload'
+          : screen === 'list' && nextScreen === 'upload'
+            ? 'list-to-upload'
         : screen === 'list' && nextScreen === 'home'
           ? 'list-to-home'
-          : screen === 'letter' && nextScreen === 'home'
-            ? 'letter-to-home'
-            : screen === 'list' && nextScreen === 'comment'
-              ? 'list-to-comment'
-              : screen === 'comment' && nextScreen === 'list'
-                ? 'comment-to-list'
-                : screen === 'list' && nextScreen === 'edit'
-                  ? 'list-to-edit'
-                  : screen === 'comment' && nextScreen === 'edit'
-                    ? 'comment-to-edit'
-                    : screen === 'edit' && nextScreen === 'comment'
-                      ? 'edit-to-comment'
-                      : screen === 'edit' && nextScreen === 'list'
-                        ? 'edit-to-list'
-                        : 'none'
+          : screen === 'upload' && nextScreen === 'home'
+            ? 'upload-to-home'
+            : screen === 'upload' && nextScreen === 'list'
+              ? 'upload-to-list'
+              : screen === 'letter' && nextScreen === 'home'
+                ? 'letter-to-home'
+                : screen === 'list' && nextScreen === 'comment'
+                  ? 'list-to-comment'
+                  : screen === 'comment' && nextScreen === 'list'
+                    ? 'comment-to-list'
+                    : screen === 'list' && nextScreen === 'edit'
+                      ? 'list-to-edit'
+                      : screen === 'comment' && nextScreen === 'edit'
+                        ? 'comment-to-edit'
+                        : screen === 'edit' && nextScreen === 'comment'
+                          ? 'edit-to-comment'
+                          : screen === 'edit' && nextScreen === 'list'
+                            ? 'edit-to-list'
+                            : 'none'
     );
     setPreviousScreen(screen);
     setScreen(nextScreen);
+  }
+
+  function navigateBack() {
+    if (isNicknamePickerOpen) {
+      setIsNicknamePickerOpen(false);
+      return;
+    }
+
+    const backScreen = getBackScreen(screen, previousScreen);
+    if (!backScreen) return;
+    navigate(backScreen);
+  }
+
+  function handleBackSwipePointerDown(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.clientX > backSwipeEdgeSize) return;
+    if (!isNicknamePickerOpen && !getBackScreen(screen, previousScreen)) return;
+
+    backSwipeGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startTime: performance.now(),
+      isBackSwipe: false,
+    };
+
+    if (event.currentTarget.setPointerCapture) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+  }
+
+  function handleBackSwipePointerMove(event) {
+    const gesture = backSwipeGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (!gesture.isBackSwipe && deltaX > 12 && absX > absY * 1.35) {
+      gesture.isBackSwipe = true;
+    }
+
+    if (gesture.isBackSwipe && event.cancelable) {
+      event.preventDefault();
+    }
+  }
+
+  function finishBackSwipePointer(event, cancelled = false) {
+    const gesture = backSwipeGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    backSwipeGesture.current = null;
+
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId) && event.currentTarget.releasePointerCapture) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (cancelled || !gesture.isBackSwipe) return;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    const elapsedMs = Math.max(performance.now() - gesture.startTime, 1);
+    const swipeVelocity = absX / elapsedMs;
+    const isHorizontalBackSwipe = deltaX > 0 && absX > absY * 1.35;
+    const isDistanceBackSwipe = absX >= backSwipeDistanceThreshold;
+    const isFastBackSwipe = absX >= 24 && swipeVelocity >= backSwipeVelocityThreshold;
+
+    if (isHorizontalBackSwipe && (isDistanceBackSwipe || isFastBackSwipe)) {
+      navigateBack();
+    }
   }
 
   async function createEntry(entry) {
@@ -2414,14 +2533,21 @@ export default function App() {
     setSelectedEntryId(null);
   }
 
-  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'letter-to-home';
-  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
+  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'home-to-upload' || screenTransition === 'letter-to-home' || screenTransition === 'upload-to-home';
+  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-upload' || screenTransition === 'upload-to-list' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
   const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
+  const showUpload = screen === 'upload' || screenTransition === 'home-to-upload' || screenTransition === 'list-to-upload' || screenTransition === 'upload-to-home' || screenTransition === 'upload-to-list';
 
   return (
-    <div className="screen-stage">
+    <div
+      className="screen-stage"
+      onPointerDown={handleBackSwipePointerDown}
+      onPointerMove={handleBackSwipePointerMove}
+      onPointerUp={finishBackSwipePointer}
+      onPointerCancel={(event) => finishBackSwipePointer(event, true)}
+    >
       {loadError ? <div className="load-error">{loadError}</div> : null}
       {showHome ? (
         <Home
@@ -2487,7 +2613,7 @@ export default function App() {
           onDeleteEntry={deleteEntry}
         />
       ) : null}
-      {screen === 'upload' ? (
+      {showUpload ? (
         <Upload
           key={`upload-${selectedWeek.id}`}
           transitionKind={screenTransition}
