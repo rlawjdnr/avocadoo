@@ -174,51 +174,6 @@ const screenPushShadowTransition = {
   ...screenPushTransition,
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
-let homeLetterEntryWasRead = false;
-const homeEntrySpring = {
-  type: 'spring',
-  stiffness: 200,
-  damping: 30,
-};
-const homeEntryOpacityTransition = {
-  duration: 0.2,
-  ease: 'easeOut',
-};
-const homeEntryVariants = {
-  hidden: { opacity: 0, y: 400 },
-  visible: (order = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      y: {
-        ...homeEntrySpring,
-        delay: order * 0.03,
-      },
-      opacity: {
-        ...homeEntryOpacityTransition,
-        delay: order * 0.03,
-      },
-    },
-  }),
-};
-const floatingHomeEntryVariants = {
-  hidden: { opacity: 0, x: '-50%', y: 400 },
-  visible: (order = 0) => ({
-    opacity: 1,
-    x: '-50%',
-    y: 0,
-    transition: {
-      y: {
-        ...homeEntrySpring,
-        delay: order * 0.03,
-      },
-      opacity: {
-        ...homeEntryOpacityTransition,
-        delay: order * 0.03,
-      },
-    },
-  }),
-};
 
 function getViewportWidth() {
   if (typeof window === 'undefined') return defaultScreenPushDistance;
@@ -252,18 +207,6 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
   if (transitionKind === 'home-to-list') {
     if (screenName === 'home') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
-      return {
-        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
-        animate: { x: 0, boxShadow: restingPageShadow },
-        style: { zIndex: 2 },
-        transition: screenPushShadowTransition,
-      };
-    }
-  }
-
-  if (transitionKind === 'home-to-letter') {
-    if (screenName === 'home') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
-    if (screenName === 'letter') {
       return {
         initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
         animate: { x: 0, boxShadow: restingPageShadow },
@@ -569,20 +512,13 @@ function writeSelectedNickname(nickname) {
   }
 }
 
-function readHomeLetterEntrySeen() {
-  return homeLetterEntryWasRead;
+function createPhotoPreviewUrl(file) {
+  return URL.createObjectURL(file);
 }
 
-function writeHomeLetterEntrySeen() {
-  homeLetterEntryWasRead = true;
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+function revokePhotoPreviewUrls(photos) {
+  photos.forEach((photo) => {
+    if (photo?.file && photo.src?.startsWith('blob:')) URL.revokeObjectURL(photo.src);
   });
 }
 
@@ -773,7 +709,7 @@ function PhotoStack({ onAdd, photos }) {
   );
 }
 
-function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false, bigWidth = uploadButtonSize.big, entranceOrder = null }) {
+function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBig = false, bigWidth = uploadButtonSize.big }) {
   const [isPressed, setIsPressed] = useState(false);
   const releasePress = () => setIsPressed(false);
   const button = (
@@ -796,49 +732,7 @@ function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBi
     </motion.button>
   );
 
-  return (
-    <motion.span
-      className="floating-upload-anchor"
-      custom={entranceOrder ?? 0}
-      variants={entranceOrder === null ? undefined : floatingHomeEntryVariants}
-      initial={entranceOrder === null ? false : 'hidden'}
-      animate={entranceOrder === null ? undefined : 'visible'}
-    >
-      {button}
-    </motion.span>
-  );
-}
-
-function HomeLetterEntry({ onRead, onClose }) {
-  return (
-    <section className="home-letter-entry" aria-label="새 편지">
-      <motion.div className="letter-paper-preview" custom={0} variants={homeEntryVariants} initial="hidden" animate="visible">
-        <div className="letter-sheet letter-sheet-back" />
-        <div className="letter-sheet letter-sheet-front" />
-        <button className="letter-entry-close" type="button" aria-label="편지 진입점 닫기" onClick={onClose}>
-          <span aria-hidden="true" />
-        </button>
-        <div className="letter-paper-copy" aria-hidden="true">
-          <img className="letter-name-asset" src={assets.letterName} alt="" />
-          <span>안녕 혜민아 ㅎㅎ 이것저것 고맙고,</span>
-          <span>사랑하는 마음이 뒤엉켜서</span>
-          <span>어떤 말부터</span>
-        </div>
-      </motion.div>
-      <div className="letter-entry-copy">
-        <motion.p custom={1} variants={homeEntryVariants} initial="hidden" animate="visible">
-          정정욱님이
-        </motion.p>
-        <motion.h1 custom={2} variants={homeEntryVariants} initial="hidden" animate="visible">
-          <span>혜민민님에게</span>
-          <span>편지를 보냈어요!</span>
-        </motion.h1>
-        <motion.button className="letter-read-button" type="button" custom={3} variants={homeEntryVariants} initial="hidden" animate="visible" onClick={onRead}>
-          편지 읽기
-        </motion.button>
-      </div>
-    </section>
-  );
+  return <motion.span className="floating-upload-anchor">{button}</motion.span>;
 }
 
 function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname }) {
@@ -917,20 +811,11 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
   );
 }
 
-function HomeMonthPage({ weeks, onSelectWeek, showLetterEntry = false }) {
+function HomeMonthPage({ weeks, onSelectWeek }) {
   return (
     <div className="home-month-page">
-      <motion.div
-        className="week-list"
-        initial={false}
-        animate={{
-          top: showLetterEntry ? 427 : 63,
-          height: `calc(100% - ${showLetterEntry ? 427 : 63}px)`,
-          paddingTop: showLetterEntry ? 0 : 12,
-        }}
-        transition={screenPushTransition}
-      >
-        {weeks.map((week, index) => {
+      <div className="week-list">
+        {weeks.map((week) => {
           const hasDiary = week.photos.length > 0;
           const content = (
             <>
@@ -944,35 +829,27 @@ function HomeMonthPage({ weeks, onSelectWeek, showLetterEntry = false }) {
 
           if (hasDiary) {
             return (
-              <motion.button
+              <button
                 className="week-card week-card-clickable"
                 type="button"
                 key={week.id}
-                custom={4 + index}
-                variants={showLetterEntry && index < 2 ? homeEntryVariants : undefined}
-                initial={showLetterEntry && index < 2 ? 'hidden' : false}
-                animate={showLetterEntry && index < 2 ? 'visible' : undefined}
                 onClick={() => onSelectWeek(week)}
               >
                 {content}
-              </motion.button>
+              </button>
             );
           }
 
           return (
-            <motion.article
+            <article
               className="week-card"
               key={week.id}
-              custom={4 + index}
-              variants={showLetterEntry && index < 2 ? homeEntryVariants : undefined}
-              initial={showLetterEntry && index < 2 ? 'hidden' : false}
-              animate={showLetterEntry && index < 2 ? 'visible' : undefined}
             >
               {content}
-            </motion.article>
+            </article>
           );
         })}
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -1041,13 +918,12 @@ function NicknamePickerSheet({ selectedNickname, onSelect, onConfirm, onDismiss 
   );
 }
 
-function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance, currentNickname = currentMemberNickname, onOpenNicknamePicker, onOpenLetter }) {
+function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, returningFromUpload, transitionKind, screenPushDistance, currentNickname = currentMemberNickname, onOpenNicknamePicker }) {
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
   const monthGesture = useRef(null);
   const monthAnimation = useRef(null);
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
-  const [showLetterEntry, setShowLetterEntry] = useState(() => !readHomeLetterEntrySeen());
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
   const activeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(activeMonthDate), entries), [activeMonthDate, entries]);
@@ -1239,19 +1115,8 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     moveToMonth(nextMonthIndex, monthViewportRef.current);
   }
 
-  function handleReadLetterEntry() {
-    writeHomeLetterEntrySeen();
-    setShowLetterEntry(false);
-    onOpenLetter();
-  }
-
-  function handleCloseLetterEntry() {
-    writeHomeLetterEntrySeen();
-    setShowLetterEntry(false);
-  }
-
   return (
-    <motion.section className={`phone home-screen ${showLetterEntry ? 'home-screen-with-letter-entry' : ''}`} {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
+    <motion.section className="phone home-screen" {...screenMotionProps('home', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader
         monthDate={activeMonthDate}
@@ -1261,7 +1126,6 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
         onOpenNicknamePicker={onOpenNicknamePicker}
         currentNickname={currentNickname}
       />
-      {showLetterEntry ? <HomeLetterEntry onRead={handleReadLetterEntry} onClose={handleCloseLetterEntry} /> : null}
       <div
         className="home-month-viewport"
         ref={monthViewportRef}
@@ -1279,7 +1143,6 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
               key={month.key}
               weeks={month.key === getMonthKey(activeMonthDate) ? activeWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
               onSelectWeek={handleSelectWeek}
-              showLetterEntry={showLetterEntry}
             />
           ))}
         </motion.div>
@@ -1288,11 +1151,10 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
         <UploadButton
           reverseFromBig={returningFromUpload}
           bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)}
-          entranceOrder={showLetterEntry ? 6 : null}
           onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')}
         />
       ) : null}
-      <CoveredPageDim visible={transitionKind === 'home-to-list' || transitionKind === 'home-to-letter'} />
+      <CoveredPageDim visible={transitionKind === 'home-to-list'} />
     </motion.section>
   );
 }
@@ -1663,12 +1525,12 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       .filter((file) => file.type.startsWith('image/'))
       .slice(0, Math.max(0, maxUploadPhotos - photos.length));
 
-    const selected = await Promise.all(files.map(async (file) => ({
+    const selected = files.map((file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         file,
-        src: await readFileAsDataUrl(file),
-      })));
+        src: createPhotoPreviewUrl(file),
+      }));
 
     if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
     event.target.value = '';
@@ -1702,6 +1564,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         commentCount: 0,
         comments: [],
       });
+      revokePhotoPreviewUrls(photos);
       onNavigate('list');
     } catch (createError) {
       setError(createError.message || '일기를 저장하지 못했어요.');
@@ -1821,12 +1684,12 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
       .filter((file) => file.type.startsWith('image/'))
       .slice(0, Math.max(0, maxUploadPhotos - photos.length));
 
-    const selected = await Promise.all(files.map(async (file) => ({
+    const selected = files.map((file) => ({
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         file,
-        src: await readFileAsDataUrl(file),
-      })));
+        src: createPhotoPreviewUrl(file),
+      }));
 
     if (selected.length > 0) setPhotos((current) => [...current, ...selected].slice(0, maxUploadPhotos));
     event.target.value = '';
@@ -1854,6 +1717,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
         text: text.trim() || '어떤 하루였나요?',
         photos: photos.slice(0, maxUploadPhotos),
       });
+      revokePhotoPreviewUrls(photos);
       onNavigate('list');
     } catch (updateError) {
       setError(updateError.message || '일기를 수정하지 못했어요.');
@@ -2281,8 +2145,6 @@ export default function App() {
     setScreenTransition(
       screen === 'home' && nextScreen === 'list'
         ? 'home-to-list'
-        : screen === 'home' && nextScreen === 'letter'
-          ? 'home-to-letter'
         : screen === 'list' && nextScreen === 'home'
           ? 'list-to-home'
           : screen === 'letter' && nextScreen === 'home'
@@ -2540,11 +2402,11 @@ export default function App() {
     setSelectedEntryId(null);
   }
 
-  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'home-to-letter' || screenTransition === 'letter-to-home';
+  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'letter-to-home';
   const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
-  const showLetter = screen === 'letter' || screenTransition === 'home-to-letter' || screenTransition === 'letter-to-home';
+  const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
 
   return (
     <div className="screen-stage">
@@ -2562,7 +2424,6 @@ export default function App() {
           onChangeMonth={changeMonth}
           onSelectWeek={openWeek}
           onOpenNicknamePicker={() => setIsNicknamePickerOpen(true)}
-          onOpenLetter={() => navigate('letter')}
         />
       ) : null}
       {showLetter ? (
