@@ -1087,7 +1087,7 @@ function normalizeDiaryEntry(entry) {
     dateLabel: entry.dateLabel || formatDateLabel(entry.date),
     weekday: entry.weekday || formatWeekday(entry.date),
     nickname: entry.nickname || currentMemberNickname,
-    photos: (entry.photos || []).slice(0, 4),
+    photos: entry.photos || [],
     text: entry.text || '어떤 하루였나요?',
     location: entry.location || '',
     comments: entry.comments || [],
