@@ -340,8 +340,16 @@ function CoveredPageDim({ visible = false }) {
   );
 }
 
-function PushPrompt({ permission = 'default', onEnable, onDismiss, isSaving = false }) {
+function PushPrompt({ permission = 'default', isSupported = true, isConfigured = true, onEnable, onDismiss, isSaving = false }) {
   const isDenied = permission === 'denied';
+  const isBlocked = isDenied || !isSupported || !isConfigured;
+  const message = !isConfigured
+    ? '알림 설정을 불러오지 못했어요.'
+    : !isSupported
+      ? '이 브라우저는 웹 푸시를 지원하지 않아요.'
+      : isDenied
+        ? '브라우저 설정에서 알림을 허용해주세요.'
+        : '새 일기와 반응을 알려드릴게요.';
 
   return (
     <motion.section
@@ -353,13 +361,13 @@ function PushPrompt({ permission = 'default', onEnable, onDismiss, isSaving = fa
       exit={{ opacity: 0, y: 18 }}
       transition={screenPushTransition}
     >
-      <span>{isDenied ? '브라우저 설정에서 알림을 허용해주세요.' : '새 일기와 반응을 알려드릴게요.'}</span>
+      <span>{message}</span>
       <div className="push-prompt-actions">
         <button className="push-prompt-secondary" type="button" onClick={onDismiss}>
           나중에
         </button>
-        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving || isDenied}>
-          알림 켜기
+        <button className="push-prompt-primary" type="button" onClick={onEnable} disabled={isSaving || isBlocked}>
+          {isBlocked ? '확인' : '알림 켜기'}
         </button>
       </div>
     </motion.section>
@@ -2262,10 +2270,10 @@ export default function App() {
   const previousScreenRef = useRef(previousScreen);
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
+  const isPushConfigured = hasSupabaseConfig && Boolean(webPushVapidPublicKey);
+  const isPushSupported = isWebPushSupported();
   const canShowPushPrompt =
-    hasSupabaseConfig &&
-    Boolean(webPushVapidPublicKey) &&
-    isWebPushSupported() &&
+    isPushConfigured &&
     pushPermission !== 'granted' &&
     !isPushPromptDismissed;
 
@@ -2657,6 +2665,8 @@ export default function App() {
         {canShowPushPrompt ? (
           <PushPrompt
             permission={pushPermission}
+            isSupported={isPushSupported}
+            isConfigured={isPushConfigured}
             onEnable={enablePushNotifications}
             onDismiss={dismissPushPrompt}
             isSaving={isPushSaving}
