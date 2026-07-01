@@ -150,6 +150,8 @@ const largePolaroidRest = [
   { left: 0, top: 11.61, rotate: -4.12 },
   { left: 0, top: 11.61, rotate: -4.12 },
   { left: 7, top: 5.56, rotate: 0 },
+  { left: 4, top: 8.2, rotate: -2.35 },
+  { left: 11, top: 3.4, rotate: 2.2 },
 ];
 
 const largePolaroidStaggerDelay = 0.03;
@@ -1209,7 +1211,7 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
 function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false }) {
   const [isPressed, setIsPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const visible = photos.slice(0, 4);
+  const visible = photos.slice(0, maxUploadPhotos);
   if (visible.length === 0) return null;
   const releasePress = () => setIsPressed(false);
   const expanded = lockedExpanded || isExpanded;
