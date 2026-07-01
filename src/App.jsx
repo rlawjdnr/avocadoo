@@ -945,6 +945,10 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     return Math.max(96, monthPageWidth * 0.18);
   }
 
+  function getMonthSwipeVelocityThreshold() {
+    return 0.45;
+  }
+
   function setMonthTrackPosition(value) {
     stopMonthAnimation();
     monthTrackX.set(value);
@@ -995,6 +999,7 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
       source,
       startX: x,
       startY: y,
+      startTime: performance.now(),
       startTrackX: monthTrackX.get(),
       isHorizontal: false,
     };
@@ -1048,7 +1053,12 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     const deltaY = y - gesture.startY;
     const absX = Math.abs(deltaX);
     const absY = Math.abs(deltaY);
-    const isValidSwipe = absX >= getMonthSwipeThreshold(viewport) && absX > absY * 1.25;
+    const elapsedMs = Math.max(performance.now() - gesture.startTime, 1);
+    const swipeVelocity = absX / elapsedMs;
+    const isHorizontalSwipe = absX > absY * 1.25;
+    const isDistanceSwipe = absX >= getMonthSwipeThreshold(viewport);
+    const isFastSwipe = absX >= 24 && swipeVelocity >= getMonthSwipeVelocityThreshold();
+    const isValidSwipe = isHorizontalSwipe && (isDistanceSwipe || isFastSwipe);
 
     if (isValidSwipe) {
       moveToMonth(activeMonthIndex + (deltaX < 0 ? 1 : -1), viewport);
