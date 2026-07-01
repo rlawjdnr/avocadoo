@@ -609,10 +609,13 @@ async function subscribeToWebPush() {
   const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
     scope: import.meta.env.BASE_URL,
   });
-  const existingSubscription = await registration.pushManager.getSubscription();
+  await registration.update();
+
+  const readyRegistration = await navigator.serviceWorker.ready;
+  const existingSubscription = await readyRegistration.pushManager.getSubscription();
   const subscription =
     existingSubscription ||
-    (await registration.pushManager.subscribe({
+    (await readyRegistration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(webPushVapidPublicKey),
     }));
