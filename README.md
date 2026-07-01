@@ -55,7 +55,7 @@ VITE_SUPABASE_CURRENT_MEMBER_NICKNAME=혜민민
 WEB_PUSH_VAPID_PUBLIC_KEY=your-vapid-public-key
 WEB_PUSH_VAPID_PRIVATE_KEY=your-vapid-private-key
 WEB_PUSH_VAPID_SUBJECT=mailto:you@example.com
-PUBLIC_SITE_URL=https://gimjeong-uk.github.io/avocadoo/
+PUBLIC_SITE_URL=https://rlawjdnr.github.io/avocadoo/
 ```
 
 4. `supabase/functions/send-web-push`를 배포합니다.

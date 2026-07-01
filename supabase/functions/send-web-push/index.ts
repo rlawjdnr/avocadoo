@@ -87,7 +87,7 @@ Deno.serve(async (request) => {
   const vapidPublicKey = Deno.env.get('WEB_PUSH_VAPID_PUBLIC_KEY');
   const vapidPrivateKey = Deno.env.get('WEB_PUSH_VAPID_PRIVATE_KEY');
   const vapidSubject = Deno.env.get('WEB_PUSH_VAPID_SUBJECT') || 'mailto:admin@example.com';
-  const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://gimjeong-uk.github.io/avocadoo/';
+  const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://rlawjdnr.github.io/avocadoo/';
 
   if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey) {
     return jsonResponse({ error: 'Missing web push environment variables' }, 500);
