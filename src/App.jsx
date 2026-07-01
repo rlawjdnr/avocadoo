@@ -318,7 +318,7 @@ function CoveredPageDim({ visible = false }) {
 
 function PushPrompt({ permission = 'default', isSupported = true, isConfigured = true, onEnable, onDismiss, isSaving = false }) {
   const isDenied = permission === 'denied';
-  const isBlocked = isDenied || !isSupported || !isConfigured;
+  const isBlocked = !isSupported || !isConfigured;
   const message = !isConfigured
     ? '알림 설정을 불러오지 못했어요.'
     : !isSupported
@@ -343,7 +343,7 @@ function PushPrompt({ permission = 'default', isSupported = true, isConfigured =
           나중에
         </button>
         <button className="push-prompt-primary" type="button" onClick={isBlocked ? onDismiss : onEnable} disabled={isSaving || !isConfigured}>
-          {isBlocked ? '확인' : '알림 켜기'}
+          {isBlocked ? '확인' : isDenied ? '다시 확인' : '알림 켜기'}
         </button>
       </div>
     </motion.section>
@@ -2292,6 +2292,23 @@ export default function App() {
 
   useEffect(() => {
     window.history.replaceState({ avocadooScreen: screen }, '', window.location.href);
+  }, []);
+
+  useEffect(() => {
+    if (!isWebPushSupported()) return undefined;
+
+    function syncPushPermission() {
+      setPushPermission(Notification.permission);
+      setIsPushPromptDismissed(Notification.permission === 'granted');
+    }
+
+    window.addEventListener('focus', syncPushPermission);
+    document.addEventListener('visibilitychange', syncPushPermission);
+
+    return () => {
+      window.removeEventListener('focus', syncPushPermission);
+      document.removeEventListener('visibilitychange', syncPushPermission);
+    };
   }, []);
 
   useEffect(() => {
