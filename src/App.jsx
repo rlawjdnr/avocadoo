@@ -176,9 +176,6 @@ const screenPushShadowTransition = {
   ...screenPushTransition,
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
-const backSwipeEdgeSize = 24;
-const backSwipeDistanceThreshold = 72;
-const backSwipeVelocityThreshold = 0.45;
 
 function getBackScreen(screen, previousScreen) {
   if (screen === 'list') return 'home';
@@ -2154,7 +2151,8 @@ export default function App() {
   const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const backSwipeGesture = useRef(null);
+  const screenRef = useRef(screen);
+  const previousScreenRef = useRef(previousScreen);
   const screenPushDistance = useViewportWidth();
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
 
@@ -2190,38 +2188,59 @@ export default function App() {
     };
   }, []);
 
-  function navigate(nextScreen) {
+  useEffect(() => {
+    screenRef.current = screen;
+    previousScreenRef.current = previousScreen;
+  }, [screen, previousScreen]);
+
+  useEffect(() => {
+    window.history.replaceState({ avocadooScreen: screen }, '', window.location.href);
+  }, []);
+
+  function applyNavigation(nextScreen, pushHistory = true) {
+    const currentScreen = screenRef.current;
+
     setScreenTransition(
-      screen === 'home' && nextScreen === 'list'
+      currentScreen === 'home' && nextScreen === 'list'
         ? 'home-to-list'
-        : screen === 'home' && nextScreen === 'upload'
+        : currentScreen === 'home' && nextScreen === 'upload'
           ? 'home-to-upload'
-          : screen === 'list' && nextScreen === 'upload'
+          : currentScreen === 'list' && nextScreen === 'upload'
             ? 'list-to-upload'
-        : screen === 'list' && nextScreen === 'home'
+        : currentScreen === 'list' && nextScreen === 'home'
           ? 'list-to-home'
-          : screen === 'upload' && nextScreen === 'home'
+          : currentScreen === 'upload' && nextScreen === 'home'
             ? 'upload-to-home'
-            : screen === 'upload' && nextScreen === 'list'
+            : currentScreen === 'upload' && nextScreen === 'list'
               ? 'upload-to-list'
-              : screen === 'letter' && nextScreen === 'home'
+              : currentScreen === 'letter' && nextScreen === 'home'
                 ? 'letter-to-home'
-                : screen === 'list' && nextScreen === 'comment'
+                : currentScreen === 'list' && nextScreen === 'comment'
                   ? 'list-to-comment'
-                  : screen === 'comment' && nextScreen === 'list'
+                  : currentScreen === 'comment' && nextScreen === 'list'
                     ? 'comment-to-list'
-                    : screen === 'list' && nextScreen === 'edit'
+                    : currentScreen === 'list' && nextScreen === 'edit'
                       ? 'list-to-edit'
-                      : screen === 'comment' && nextScreen === 'edit'
+                      : currentScreen === 'comment' && nextScreen === 'edit'
                         ? 'comment-to-edit'
-                        : screen === 'edit' && nextScreen === 'comment'
+                        : currentScreen === 'edit' && nextScreen === 'comment'
                           ? 'edit-to-comment'
-                          : screen === 'edit' && nextScreen === 'list'
+                          : currentScreen === 'edit' && nextScreen === 'list'
                             ? 'edit-to-list'
                             : 'none'
     );
-    setPreviousScreen(screen);
+    setPreviousScreen(currentScreen);
     setScreen(nextScreen);
+    screenRef.current = nextScreen;
+    previousScreenRef.current = currentScreen;
+
+    if (pushHistory && typeof window !== 'undefined') {
+      window.history.pushState({ avocadooScreen: nextScreen }, '', window.location.href);
+    }
+  }
+
+  function navigate(nextScreen) {
+    applyNavigation(nextScreen);
   }
 
   function navigateBack() {
@@ -2230,73 +2249,19 @@ export default function App() {
       return;
     }
 
-    const backScreen = getBackScreen(screen, previousScreen);
+    const backScreen = getBackScreen(screenRef.current, previousScreenRef.current);
     if (!backScreen) return;
-    navigate(backScreen);
+    applyNavigation(backScreen, false);
   }
 
-  function handleBackSwipePointerDown(event) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    if (event.clientX > backSwipeEdgeSize) return;
-    if (!isNicknamePickerOpen && !getBackScreen(screen, previousScreen)) return;
-
-    backSwipeGesture.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startTime: performance.now(),
-      isBackSwipe: false,
-    };
-
-    if (event.currentTarget.setPointerCapture) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-  }
-
-  function handleBackSwipePointerMove(event) {
-    const gesture = backSwipeGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-
-    if (!gesture.isBackSwipe && deltaX > 12 && absX > absY * 1.35) {
-      gesture.isBackSwipe = true;
-    }
-
-    if (gesture.isBackSwipe && event.cancelable) {
-      event.preventDefault();
-    }
-  }
-
-  function finishBackSwipePointer(event, cancelled = false) {
-    const gesture = backSwipeGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-
-    backSwipeGesture.current = null;
-
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId) && event.currentTarget.releasePointerCapture) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    if (cancelled || !gesture.isBackSwipe) return;
-
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-    const elapsedMs = Math.max(performance.now() - gesture.startTime, 1);
-    const swipeVelocity = absX / elapsedMs;
-    const isHorizontalBackSwipe = deltaX > 0 && absX > absY * 1.35;
-    const isDistanceBackSwipe = absX >= backSwipeDistanceThreshold;
-    const isFastBackSwipe = absX >= 24 && swipeVelocity >= backSwipeVelocityThreshold;
-
-    if (isHorizontalBackSwipe && (isDistanceBackSwipe || isFastBackSwipe)) {
+  useEffect(() => {
+    function handlePopState() {
       navigateBack();
     }
-  }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isNicknamePickerOpen]);
 
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
@@ -2541,13 +2506,7 @@ export default function App() {
   const showUpload = screen === 'upload' || screenTransition === 'home-to-upload' || screenTransition === 'list-to-upload' || screenTransition === 'upload-to-home' || screenTransition === 'upload-to-list';
 
   return (
-    <div
-      className="screen-stage"
-      onPointerDown={handleBackSwipePointerDown}
-      onPointerMove={handleBackSwipePointerMove}
-      onPointerUp={finishBackSwipePointer}
-      onPointerCancel={(event) => finishBackSwipePointer(event, true)}
-    >
+    <div className="screen-stage">
       {loadError ? <div className="load-error">{loadError}</div> : null}
       {showHome ? (
         <Home
