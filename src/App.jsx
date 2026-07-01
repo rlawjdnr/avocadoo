@@ -1346,7 +1346,7 @@ function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   return (
     <article className="diary-item diary-item-created diary-item-list-card">
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
-      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} />
       <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
     </article>
