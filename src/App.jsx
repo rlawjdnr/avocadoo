@@ -241,33 +241,9 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
     }
   }
 
-  if (transitionKind === 'home-to-upload' || transitionKind === 'list-to-upload') {
-    if (screenName === 'home' || screenName === 'list') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
-    if (screenName === 'upload') {
-      return {
-        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
-        animate: { x: 0, boxShadow: restingPageShadow },
-        style: { zIndex: 2 },
-        transition: screenPushShadowTransition,
-      };
-    }
-  }
-
   if (transitionKind === 'list-to-home') {
     if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
-      return {
-        initial: { boxShadow: coveringPageShadow },
-        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
-        style: { zIndex: 2 },
-        transition: screenPushShadowTransition,
-      };
-    }
-  }
-
-  if (transitionKind === 'upload-to-home' || transitionKind === 'upload-to-list') {
-    if (screenName === 'home' || screenName === 'list') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
-    if (screenName === 'upload') {
       return {
         initial: { boxShadow: coveringPageShadow },
         animate: { x: screenPushDistance, boxShadow: restingPageShadow },
@@ -2344,38 +2320,34 @@ export default function App() {
     setIsPushPromptDismissed(true);
   }
 
-  function applyNavigation(nextScreen, pushHistory = true) {
+  function getScreenTransition(nextScreen) {
     const currentScreen = screenRef.current;
 
-    setScreenTransition(
-      currentScreen === 'home' && nextScreen === 'list'
-        ? 'home-to-list'
-        : currentScreen === 'home' && nextScreen === 'upload'
-          ? 'home-to-upload'
-          : currentScreen === 'list' && nextScreen === 'upload'
-            ? 'list-to-upload'
+    return currentScreen === 'home' && nextScreen === 'list'
+      ? 'home-to-list'
         : currentScreen === 'list' && nextScreen === 'home'
           ? 'list-to-home'
-          : currentScreen === 'upload' && nextScreen === 'home'
-            ? 'upload-to-home'
-            : currentScreen === 'upload' && nextScreen === 'list'
-              ? 'upload-to-list'
-              : currentScreen === 'letter' && nextScreen === 'home'
-                ? 'letter-to-home'
-                : currentScreen === 'list' && nextScreen === 'comment'
-                  ? 'list-to-comment'
-                  : currentScreen === 'comment' && nextScreen === 'list'
-                    ? 'comment-to-list'
-                    : currentScreen === 'list' && nextScreen === 'edit'
-                      ? 'list-to-edit'
-                      : currentScreen === 'comment' && nextScreen === 'edit'
-                        ? 'comment-to-edit'
-                        : currentScreen === 'edit' && nextScreen === 'comment'
-                          ? 'edit-to-comment'
-                          : currentScreen === 'edit' && nextScreen === 'list'
-                            ? 'edit-to-list'
-                            : 'none'
-    );
+          : currentScreen === 'letter' && nextScreen === 'home'
+            ? 'letter-to-home'
+            : currentScreen === 'list' && nextScreen === 'comment'
+              ? 'list-to-comment'
+              : currentScreen === 'comment' && nextScreen === 'list'
+                ? 'comment-to-list'
+                : currentScreen === 'list' && nextScreen === 'edit'
+                  ? 'list-to-edit'
+                  : currentScreen === 'comment' && nextScreen === 'edit'
+                    ? 'comment-to-edit'
+                    : currentScreen === 'edit' && nextScreen === 'comment'
+                      ? 'edit-to-comment'
+                      : currentScreen === 'edit' && nextScreen === 'list'
+                        ? 'edit-to-list'
+                        : 'none';
+  }
+
+  function applyNavigation(nextScreen, { pushHistory = true, animate = true } = {}) {
+    const currentScreen = screenRef.current;
+
+    setScreenTransition(animate ? getScreenTransition(nextScreen) : 'none');
     setPreviousScreen(currentScreen);
     setScreen(nextScreen);
     screenRef.current = nextScreen;
@@ -2390,7 +2362,7 @@ export default function App() {
     applyNavigation(nextScreen);
   }
 
-  function navigateBack() {
+  function navigateBack({ animate = true } = {}) {
     if (isNicknamePickerOpen) {
       setIsNicknamePickerOpen(false);
       return;
@@ -2398,12 +2370,12 @@ export default function App() {
 
     const backScreen = getBackScreen(screenRef.current, previousScreenRef.current);
     if (!backScreen) return;
-    applyNavigation(backScreen, false);
+    applyNavigation(backScreen, { pushHistory: false, animate });
   }
 
   useEffect(() => {
     function handlePopState() {
-      navigateBack();
+      navigateBack({ animate: false });
     }
 
     window.addEventListener('popstate', handlePopState);
@@ -2651,12 +2623,11 @@ export default function App() {
     setSelectedEntryId(null);
   }
 
-  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'home-to-upload' || screenTransition === 'letter-to-home' || screenTransition === 'upload-to-home';
-  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-upload' || screenTransition === 'upload-to-list' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
+  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'letter-to-home';
+  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
   const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
-  const showUpload = screen === 'upload' || screenTransition === 'home-to-upload' || screenTransition === 'list-to-upload' || screenTransition === 'upload-to-home' || screenTransition === 'upload-to-list';
 
   return (
     <div className="screen-stage">
@@ -2737,7 +2708,7 @@ export default function App() {
           onDeleteEntry={deleteEntry}
         />
       ) : null}
-      {showUpload ? (
+      {screen === 'upload' ? (
         <Upload
           key={`upload-${selectedWeek.id}`}
           transitionKind={screenTransition}
