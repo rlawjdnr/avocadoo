@@ -34,14 +34,9 @@ Supabase SQL Editor에서 `supabase/schema.sql`을 실행하면 아래 리소스
 - 기본 커플 공간과 멤버 2명: `정정욱`, `혜민민`
 - 웹 푸시 구독 테이블: `push_subscriptions`
 
-닉네임 생성 플로우가 아직 없어서 앱의 현재 작성자는 `.env`의 `VITE_SUPABASE_CURRENT_MEMBER_ID`와 `VITE_SUPABASE_CURRENT_MEMBER_NICKNAME`으로 고정합니다. 기본값은 `정정욱`입니다.
+앱 상단의 닉네임 선택에서 현재 작성자를 고릅니다. 선택한 닉네임은 브라우저에 저장되며, 일기와 댓글 저장 시 해당 멤버의 `author_id`로 기록됩니다.
 
-같은 `VITE_SUPABASE_COUPLE_SPACE_ID`를 쓰는 두 멤버는 서로가 올린 diary를 함께 봅니다. 두 번째 멤버로 실행하려면 아래 값으로 바꿔 실행하세요.
-
-```bash
-VITE_SUPABASE_CURRENT_MEMBER_ID=22222222-2222-4222-8222-222222222222
-VITE_SUPABASE_CURRENT_MEMBER_NICKNAME=혜민민
-```
+같은 `VITE_SUPABASE_COUPLE_SPACE_ID`를 쓰는 두 멤버는 서로가 올린 diary를 함께 봅니다. `.env`의 `VITE_SUPABASE_CURRENT_MEMBER_ID`와 `VITE_SUPABASE_CURRENT_MEMBER_NICKNAME`은 저장된 닉네임이 없을 때 사용할 기본 선택값입니다.
 
 ## Web Push
 

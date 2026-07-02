@@ -36,6 +36,10 @@ const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-ima
 const defaultWebPushVapidPublicKey = 'BAo8gRVBc4zCwpkWat48097mHx-eMq_2Lw1dNLgmkIJn7VAz7sSXNdU53Mt5DS2HQmIvlecyq_qDBBxSk7dG3pA';
 const webPushVapidPublicKey = (import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || defaultWebPushVapidPublicKey).trim();
 const memberNicknames = ['혜민민', '정정욱'];
+const seededMemberIdsByNickname = {
+  혜민민: '22222222-2222-4222-8222-222222222222',
+  정정욱: '22222222-2222-4222-8222-222222222221',
+};
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 
 const uploadButtonRadiusSpring = {
@@ -544,7 +548,7 @@ function urlBase64ToUint8Array(base64String) {
   return bytes.buffer;
 }
 
-async function savePushSubscription(subscription) {
+async function savePushSubscription(subscription, memberId = currentMemberId) {
   if (!hasSupabaseConfig || !subscription) return;
 
   const subscriptionJson = subscription.toJSON();
@@ -552,7 +556,7 @@ async function savePushSubscription(subscription) {
     .from('push_subscriptions')
     .upsert(
       {
-        member_id: currentMemberId,
+        member_id: memberId,
         endpoint: subscriptionJson.endpoint,
         p256dh: subscriptionJson.keys?.p256dh,
         auth: subscriptionJson.keys?.auth,
@@ -565,7 +569,7 @@ async function savePushSubscription(subscription) {
   if (error) throw error;
 }
 
-async function subscribeToWebPush() {
+async function subscribeToWebPush(memberId = currentMemberId) {
   if (!hasSupabaseConfig || !webPushVapidPublicKey || !isWebPushSupported()) return 'unsupported';
 
   const permission = await Notification.requestPermission();
@@ -585,17 +589,17 @@ async function subscribeToWebPush() {
       applicationServerKey: urlBase64ToUint8Array(webPushVapidPublicKey),
     }));
 
-  await savePushSubscription(subscription);
+  await savePushSubscription(subscription, memberId);
   return 'granted';
 }
 
-async function notifyWebPush(eventType, payload) {
+async function notifyWebPush(eventType, payload, actorMemberId = currentMemberId) {
   if (!hasSupabaseConfig) return;
 
   const { error } = await supabase.functions.invoke('send-web-push', {
     body: {
       eventType,
-      actorMemberId: currentMemberId,
+      actorMemberId,
       ...payload,
     },
   });
@@ -609,6 +613,37 @@ function normalizeSelectedNickname(nickname) {
   if (memberNicknames.includes(nickname)) return nickname;
   if (memberNicknames.includes(currentMemberNickname)) return currentMemberNickname;
   return memberNicknames[1];
+}
+
+function getPartnerNickname(nickname) {
+  const selected = normalizeSelectedNickname(nickname);
+  return memberNicknames.find((memberNickname) => memberNickname !== selected) || selected;
+}
+
+function getMemberIdForNickname(nickname) {
+  const normalizedNickname = normalizeSelectedNickname(nickname);
+  if (normalizedNickname === normalizeSelectedNickname(currentMemberNickname)) return currentMemberId;
+  return seededMemberIdsByNickname[normalizedNickname] || currentMemberId;
+}
+
+function getNicknameForMemberId(memberId) {
+  const normalizedCurrentNickname = normalizeSelectedNickname(currentMemberNickname);
+  if (memberId === currentMemberId) return normalizedCurrentNickname;
+
+  const seededNickname = memberNicknames.find((nickname) => seededMemberIdsByNickname[nickname] === memberId);
+  return seededNickname || normalizedCurrentNickname;
+}
+
+function getMemberPairForNickname(nickname) {
+  const selectedNickname = normalizeSelectedNickname(nickname);
+  const partnerNickname = getPartnerNickname(selectedNickname);
+
+  return {
+    selectedNickname,
+    selectedMemberId: getMemberIdForNickname(selectedNickname),
+    partnerNickname,
+    partnerMemberId: getMemberIdForNickname(partnerNickname),
+  };
 }
 
 function getMemberAvatarSrc(nickname) {
@@ -666,7 +701,7 @@ function getWeekIdForDate(value) {
   return `week-${toDateInputValue(new Date(date.getFullYear(), date.getMonth(), weekStartDay))}`;
 }
 
-function mapDiaryEntry(row) {
+function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
   const entryLikes = row.diary_entry_likes || [];
   const photos = (row.diary_images || [])
     .slice()
@@ -683,9 +718,9 @@ function mapDiaryEntry(row) {
       const commentLikes = comment.diary_comment_likes || [];
       return {
         id: comment.id,
-        nickname: comment.couple_members?.nickname || currentMemberNickname,
+        nickname: comment.couple_members?.nickname || getNicknameForMemberId(comment.author_id),
         text: comment.body_text,
-        liked: commentLikes.some((like) => like.member_id === currentMemberId),
+        liked: commentLikes.some((like) => like.member_id === viewerMemberId),
         likeCount: commentLikes.length,
       };
     });
@@ -696,11 +731,11 @@ function mapDiaryEntry(row) {
     date: row.diary_date,
     dateLabel: formatDateLabel(row.diary_date),
     weekday: formatWeekday(row.diary_date),
-    nickname: row.couple_members?.nickname || currentMemberNickname,
+    nickname: row.couple_members?.nickname || getNicknameForMemberId(row.author_id),
     photos,
     text: row.body_text,
     location: row.location_text || '',
-    liked: entryLikes.some((like) => like.member_id === currentMemberId),
+    liked: entryLikes.some((like) => like.member_id === viewerMemberId),
     likeCount: entryLikes.length,
     commentCount: comments.length,
     comments,
@@ -1614,7 +1649,7 @@ function StaticUploadField({ children }) {
   return <div>{children}</div>;
 }
 
-function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance, autoOpenDatePicker = false, onDatePickerAutoOpened }) {
+function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance, currentNickname = currentMemberNickname, autoOpenDatePicker = false, onDatePickerAutoOpened }) {
   const [photos, setPhotos] = useState([]);
   const [date, setDate] = useState(initialDate);
   const [location, setLocation] = useState('');
@@ -1689,7 +1724,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         dateLabel: formatDateLabel(date),
         weekday: formatWeekday(date),
         location: location.trim(),
-        nickname: currentMemberNickname,
+        nickname: currentNickname,
         photos: photos.slice(0, maxUploadPhotos),
         text: text.trim() || '어떤 하루였나요?',
         liked: false,
@@ -1934,7 +1969,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   );
 }
 
-async function fetchDiaryEntries() {
+async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
   if (!hasSupabaseConfig) return readLocalEntries();
 
   const { data: entryRows, error: entriesError } = await supabase
@@ -2004,9 +2039,9 @@ async function fetchDiaryEntries() {
           const likes = likesByComment.get(comment.id) || [];
           return {
             id: comment.id,
-            nickname: membersById.get(comment.author_id) || currentMemberNickname,
+            nickname: membersById.get(comment.author_id) || getNicknameForMemberId(comment.author_id),
             text: comment.body_text,
-            liked: likes.some((like) => like.member_id === currentMemberId),
+            liked: likes.some((like) => like.member_id === viewerMemberId),
             likeCount: likes.length,
           };
         });
@@ -2017,11 +2052,11 @@ async function fetchDiaryEntries() {
         date: entry.diary_date,
         dateLabel: formatDateLabel(entry.diary_date),
         weekday: formatWeekday(entry.diary_date),
-        nickname: membersById.get(entry.author_id) || currentMemberNickname,
+        nickname: membersById.get(entry.author_id) || getNicknameForMemberId(entry.author_id),
         photos: entryImages,
         text: entry.body_text,
         location: entry.location_text || '',
-        liked: likes.some((like) => like.member_id === currentMemberId),
+        liked: likes.some((like) => like.member_id === viewerMemberId),
         likeCount: likes.length,
         commentCount: entryComments.length,
         comments: entryComments,
@@ -2227,6 +2262,11 @@ function updateLocalEntry(entries, entryId, changes) {
   );
 }
 
+function requireSupabasePersistedEntry(entryId) {
+  if (isSupabaseUuid(entryId)) return;
+  throw new Error('이전 로컬 임시 일기는 서버에 저장할 수 없어요. 새로 올려주세요.');
+}
+
 export default function App() {
   const [screen, setScreen] = useState('home');
   const [previousScreen, setPreviousScreen] = useState(null);
@@ -2245,6 +2285,9 @@ export default function App() {
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
   const screenPushDistance = useViewportWidth();
+  const memberPair = useMemo(() => getMemberPairForNickname(selectedNickname), [selectedNickname]);
+  const selectedMemberId = memberPair.selectedMemberId;
+  const selectedMemberNickname = memberPair.selectedNickname;
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
   const isPushConfigured = hasSupabaseConfig && Boolean(webPushVapidPublicKey);
   const isPushSupported = isWebPushSupported();
@@ -2257,7 +2300,7 @@ export default function App() {
     setEntries((current) => {
       const nextEntries = typeof nextEntriesOrUpdater === 'function' ? nextEntriesOrUpdater(current) : nextEntriesOrUpdater;
       const sortedEntries = sortEntriesByDate(nextEntries);
-      writeLocalEntries(sortedEntries);
+      if (!hasSupabaseConfig) writeLocalEntries(sortedEntries);
       return sortedEntries;
     });
   }
@@ -2265,7 +2308,7 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchDiaryEntries()
+    fetchDiaryEntries(selectedMemberId)
       .then((nextEntries) => {
         if (!isMounted) return;
         setEntriesAndCache(nextEntries);
@@ -2274,16 +2317,21 @@ export default function App() {
       })
       .catch((error) => {
         if (!isMounted) return;
-        const localEntries = readLocalEntries();
-        setEntriesAndCache(localEntries);
-        setSelectedEntryId(localEntries[0]?.id || null);
+        if (hasSupabaseConfig) {
+          setEntries([]);
+          setSelectedEntryId(null);
+        } else {
+          const localEntries = readLocalEntries();
+          setEntriesAndCache(localEntries);
+          setSelectedEntryId(localEntries[0]?.id || null);
+        }
         setLoadError(error.message || '일기를 불러오지 못했어요.');
       });
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [selectedMemberId]);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -2312,7 +2360,7 @@ export default function App() {
 
       isRefreshingSubscription = true;
       try {
-        await subscribeToWebPush();
+        await subscribeToWebPush(selectedMemberId);
       } catch (error) {
         console.warn('Web push subscription refresh failed', error);
         setIsPushPromptDismissed(false);
@@ -2330,13 +2378,13 @@ export default function App() {
       window.removeEventListener('focus', syncPushPermission);
       document.removeEventListener('visibilitychange', syncPushPermission);
     };
-  }, []);
+  }, [selectedMemberId]);
 
   async function enablePushNotifications() {
     setIsPushSaving(true);
 
     try {
-      const permission = await subscribeToWebPush();
+      const permission = await subscribeToWebPush(selectedMemberId);
       setPushPermission(permission);
       setIsPushPromptDismissed(permission === 'granted');
     } catch (error) {
@@ -2415,7 +2463,7 @@ export default function App() {
   async function createEntry(entry) {
     const entryId = crypto.randomUUID();
     if (!hasSupabaseConfig) {
-      const savedEntry = buildLocalSavedEntry({ ...entry, nickname: selectedNickname }, entryId);
+      const savedEntry = buildLocalSavedEntry({ ...entry, nickname: selectedMemberNickname }, entryId);
       setEntriesAndCache((current) => [savedEntry, ...current]);
       setSelectedEntryId(entryId);
       return;
@@ -2426,7 +2474,7 @@ export default function App() {
       .insert({
         id: entryId,
         space_id: coupleSpaceId,
-        author_id: currentMemberId,
+        author_id: selectedMemberId,
         diary_date: entry.date,
         location_text: entry.location,
         body_text: entry.text,
@@ -2441,7 +2489,7 @@ export default function App() {
     const savedEntry = buildLocalSavedEntry(
       {
         ...entry,
-        nickname: selectedNickname,
+        nickname: selectedMemberNickname,
         date: savedRow?.diary_date || entry.date,
         dateLabel: formatDateLabel(savedRow?.diary_date || entry.date),
         weekday: formatWeekday(savedRow?.diary_date || entry.date),
@@ -2454,7 +2502,7 @@ export default function App() {
 
     setEntriesAndCache((current) => [savedEntry, ...current]);
     setSelectedEntryId(entryId);
-    void notifyWebPush('diary_created', { entryId });
+    void notifyWebPush('diary_created', { entryId }, selectedMemberId);
   }
 
   function changeMonth(nextMonthDate) {
@@ -2494,13 +2542,18 @@ export default function App() {
 
     applyLikeState(nextLiked, nextLikeCount);
 
-    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
+    if (!hasSupabaseConfig) {
+      return;
+    }
+    if (!isSupabaseUuid(entryId)) {
+      setLoadError('이전 로컬 임시 일기는 서버에 저장할 수 없어요. 새로 올려주세요.');
+      applyLikeState(entry.liked, entry.likeCount || 0);
       return;
     }
 
     const request = nextLiked
-      ? supabase.from('diary_entry_likes').insert({ entry_id: entryId, member_id: currentMemberId })
-      : supabase.from('diary_entry_likes').delete().eq('entry_id', entryId).eq('member_id', currentMemberId);
+      ? supabase.from('diary_entry_likes').insert({ entry_id: entryId, member_id: selectedMemberId })
+      : supabase.from('diary_entry_likes').delete().eq('entry_id', entryId).eq('member_id', selectedMemberId);
     const { error } = await request;
     if (error) {
       setLoadError(error.message);
@@ -2509,7 +2562,7 @@ export default function App() {
     }
 
     if (nextLiked) {
-      void notifyWebPush('diary_liked', { entryId });
+      void notifyWebPush('diary_liked', { entryId }, selectedMemberId);
     }
   }
 
@@ -2534,13 +2587,18 @@ export default function App() {
 
     applyCommentLikeState(nextLiked, nextLikeCount);
 
-    if (!hasSupabaseConfig || !isSupabaseUuid(commentId)) {
+    if (!hasSupabaseConfig) {
+      return;
+    }
+    if (!isSupabaseUuid(commentId)) {
+      setLoadError('이전 로컬 임시 댓글은 서버에 저장할 수 없어요.');
+      applyCommentLikeState(comment.liked, comment.likeCount || 0);
       return;
     }
 
     const request = nextLiked
-      ? supabase.from('diary_comment_likes').insert({ comment_id: commentId, member_id: currentMemberId })
-      : supabase.from('diary_comment_likes').delete().eq('comment_id', commentId).eq('member_id', currentMemberId);
+      ? supabase.from('diary_comment_likes').insert({ comment_id: commentId, member_id: selectedMemberId })
+      : supabase.from('diary_comment_likes').delete().eq('comment_id', commentId).eq('member_id', selectedMemberId);
     const { error } = await request;
     if (error) {
       setLoadError(error.message);
@@ -2550,17 +2608,21 @@ export default function App() {
 
   async function addComment(entryId, text) {
     const commentId = crypto.randomUUID();
-    const comment = { id: commentId, nickname: selectedNickname, text, liked: false, likeCount: 0 };
+    const comment = { id: commentId, nickname: selectedMemberNickname, text, liked: false, likeCount: 0 };
 
-    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
+    if (!hasSupabaseConfig) {
       setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
+      return;
+    }
+    if (!isSupabaseUuid(entryId)) {
+      setLoadError('이전 로컬 임시 일기에는 댓글을 저장할 수 없어요. 새로 올린 일기에 댓글을 남겨주세요.');
       return;
     }
 
     const { error } = await supabase.from('diary_comments').insert({
       id: commentId,
       entry_id: entryId,
-      author_id: currentMemberId,
+      author_id: selectedMemberId,
       body_text: text,
     });
 
@@ -2575,7 +2637,7 @@ export default function App() {
     }
 
     setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
-    void notifyWebPush('comment_created', { entryId, commentId });
+    void notifyWebPush('comment_created', { entryId, commentId }, selectedMemberId);
   }
 
   async function updateEntry(entryId, changes) {
@@ -2592,21 +2654,25 @@ export default function App() {
       file: photo.file,
     }));
 
-    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
+    if (!hasSupabaseConfig) {
       setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: nextPhotos }));
       return;
     }
+    requireSupabasePersistedEntry(entryId);
 
-    const { error: entryError } = await supabase
+    const { data: savedRow, error: entryError } = await supabase
       .from('diary_entries')
       .update({
         diary_date: changes.date,
         location_text: changes.location,
         body_text: changes.text,
       })
-      .eq('id', entryId);
+      .eq('id', entryId)
+      .select('id, diary_date, location_text, body_text')
+      .maybeSingle();
 
     if (entryError) throw entryError;
+    if (!savedRow) throw new Error('수정할 일기를 찾지 못했어요.');
 
     let savedPhotos = nextPhotos;
     try {
@@ -2615,15 +2681,26 @@ export default function App() {
       if (!isDiaryImagesPolicyError(imageError)) throw imageError;
     }
 
-    setEntriesAndCache((current) => updateLocalEntry(current, entryId, { ...changes, photos: savedPhotos }));
+    setEntriesAndCache((current) =>
+      updateLocalEntry(current, entryId, {
+        ...changes,
+        date: savedRow.diary_date || changes.date,
+        dateLabel: formatDateLabel(savedRow.diary_date || changes.date),
+        weekday: formatWeekday(savedRow.diary_date || changes.date),
+        location: savedRow.location_text || '',
+        text: savedRow.body_text || changes.text,
+        photos: savedPhotos,
+      })
+    );
   }
 
   async function deleteEntry(entryId) {
-    if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) {
+    if (!hasSupabaseConfig) {
       setEntriesAndCache((current) => current.filter((entry) => entry.id !== entryId));
       setSelectedEntryId(null);
       return;
     }
+    requireSupabasePersistedEntry(entryId);
 
     const { data: comments, error: commentsReadError } = await supabase.from('diary_comments').select('id').eq('entry_id', entryId);
     if (commentsReadError) throw commentsReadError;
@@ -2683,7 +2760,7 @@ export default function App() {
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
           returningFromUpload={previousScreen === 'upload'}
-          currentNickname={selectedNickname}
+          currentNickname={selectedMemberNickname}
           onChangeMonth={changeMonth}
           onSelectWeek={openWeek}
           onOpenNicknamePicker={() => setIsNicknamePickerOpen(true)}
@@ -2724,7 +2801,7 @@ export default function App() {
           onToggleCommentLike={toggleCommentLike}
           onAddComment={addComment}
           onEditEntry={openEditEntry}
-          currentNickname={selectedNickname}
+          currentNickname={selectedMemberNickname}
         />
       ) : null}
       {showEdit && selectedEntry ? (
@@ -2749,12 +2826,13 @@ export default function App() {
           onDatePickerAutoOpened={() => setShouldOpenUploadDatePicker(false)}
           onCreateEntry={createEntry}
           onNavigate={navigate}
+          currentNickname={selectedMemberNickname}
         />
       ) : null}
       <AnimatePresence>
         {isNicknamePickerOpen ? (
           <NicknamePickerSheet
-            selectedNickname={selectedNickname}
+            selectedNickname={selectedMemberNickname}
             onSelect={selectNickname}
             onConfirm={() => setIsNicknamePickerOpen(false)}
             onDismiss={() => setIsNicknamePickerOpen(false)}
