@@ -10,8 +10,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || '아보카도';
   const options = {
     body: data.body || '',
-    icon: './app-icon-192.png',
-    badge: './app-icon-192.png',
+    icon: './app-icon-192-v20260703.png',
+    badge: './app-icon-192-v20260703.png',
     data: {
       url: data.url || './',
     },
