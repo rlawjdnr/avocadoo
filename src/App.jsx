@@ -2284,6 +2284,7 @@ export default function App() {
   const [isPushSaving, setIsPushSaving] = useState(false);
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
+  const shouldIgnoreNextPopState = useRef(false);
   const screenPushDistance = useViewportWidth();
   const memberPair = useMemo(() => getMemberPairForNickname(selectedNickname), [selectedNickname]);
   const selectedMemberId = memberPair.selectedMemberId;
@@ -2424,6 +2425,7 @@ export default function App() {
 
   function applyNavigation(nextScreen, { pushHistory = true, animate = true } = {}) {
     const currentScreen = screenRef.current;
+    const previousScreen = previousScreenRef.current;
 
     setScreenTransition(animate ? getScreenTransition(nextScreen) : 'none');
     setPreviousScreen(currentScreen);
@@ -2432,6 +2434,12 @@ export default function App() {
     previousScreenRef.current = currentScreen;
 
     if (pushHistory && typeof window !== 'undefined') {
+      if (currentScreen === 'edit' && nextScreen === 'list') {
+        shouldIgnoreNextPopState.current = true;
+        window.history.go(previousScreen === 'comment' ? -2 : -1);
+        return;
+      }
+
       window.history.pushState({ avocadooScreen: nextScreen }, '', window.location.href);
     }
   }
@@ -2453,6 +2461,16 @@ export default function App() {
 
   useEffect(() => {
     function handlePopState() {
+      if (shouldIgnoreNextPopState.current) {
+        shouldIgnoreNextPopState.current = false;
+        return;
+      }
+
+      if (screenRef.current === 'home') {
+        window.history.pushState({ avocadooScreen: 'home' }, '', window.location.href);
+        return;
+      }
+
       navigateBack({ animate: false });
     }
 
