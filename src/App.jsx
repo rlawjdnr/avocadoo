@@ -4,6 +4,7 @@ import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
 const assets = {
   bg: './assets/bg-home.png',
+  logo: './app-logo.png',
   photos: {
     couple: './assets/photo-couple.png',
     water: './assets/photo-water.png',
@@ -182,6 +183,7 @@ const screenPushShadowTransition = {
   ...screenPushTransition,
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
+const splashMinimumDurationMs = 2000;
 
 function getBackScreen(screen, previousScreen) {
   if (screen === 'list') return 'home';
@@ -2267,6 +2269,21 @@ function requireSupabasePersistedEntry(entryId) {
   throw new Error('이전 로컬 임시 일기는 서버에 저장할 수 없어요. 새로 올려주세요.');
 }
 
+function SplashScreen() {
+  return (
+    <motion.div
+      className="splash-screen"
+      role="status"
+      aria-label="앱 로딩 중"
+      initial={false}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+    >
+      <img className="splash-logo" src={assets.logo} alt="" />
+    </motion.div>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState('home');
   const [previousScreen, setPreviousScreen] = useState(null);
@@ -2279,6 +2296,8 @@ export default function App() {
   const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [isSplashMinimumElapsed, setIsSplashMinimumElapsed] = useState(false);
+  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
   const [pushPermission, setPushPermission] = useState(() => (isWebPushSupported() ? Notification.permission : 'unsupported'));
   const [isPushPromptDismissed, setIsPushPromptDismissed] = useState(false);
   const [isPushSaving, setIsPushSaving] = useState(false);
@@ -2296,6 +2315,7 @@ export default function App() {
     isPushConfigured &&
     pushPermission !== 'granted' &&
     !isPushPromptDismissed;
+  const showSplash = !isSplashMinimumElapsed || !isInitialDataLoaded;
 
   function setEntriesAndCache(nextEntriesOrUpdater) {
     setEntries((current) => {
@@ -2327,12 +2347,24 @@ export default function App() {
           setSelectedEntryId(localEntries[0]?.id || null);
         }
         setLoadError(error.message || '일기를 불러오지 못했어요.');
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsInitialDataLoaded(true);
       });
 
     return () => {
       isMounted = false;
     };
   }, [selectedMemberId]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setIsSplashMinimumElapsed(true);
+    }, splashMinimumDurationMs);
+
+    return () => window.clearTimeout(timerId);
+  }, []);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -2857,6 +2889,7 @@ export default function App() {
           />
         ) : null}
       </AnimatePresence>
+      <AnimatePresence>{showSplash ? <SplashScreen /> : null}</AnimatePresence>
     </div>
   );
 }
