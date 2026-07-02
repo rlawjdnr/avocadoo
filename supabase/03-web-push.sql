@@ -11,6 +11,11 @@ create table if not exists public.push_subscriptions (
 
 alter table public.push_subscriptions enable row level security;
 
+drop policy if exists "public read push subscriptions" on public.push_subscriptions;
+create policy "public read push subscriptions"
+  on public.push_subscriptions for select
+  using (true);
+
 drop policy if exists "public upsert push subscriptions" on public.push_subscriptions;
 create policy "public upsert push subscriptions"
   on public.push_subscriptions for insert

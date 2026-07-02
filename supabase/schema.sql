@@ -214,6 +214,11 @@ create policy "public delete diary comment likes"
   on public.diary_comment_likes for delete
   using (true);
 
+drop policy if exists "public read push subscriptions" on public.push_subscriptions;
+create policy "public read push subscriptions"
+  on public.push_subscriptions for select
+  using (true);
+
 drop policy if exists "public upsert push subscriptions" on public.push_subscriptions;
 create policy "public upsert push subscriptions"
   on public.push_subscriptions for insert

@@ -2296,12 +2296,33 @@ export default function App() {
 
   useEffect(() => {
     if (!isWebPushSupported()) return undefined;
+    let isRefreshingSubscription = false;
 
-    function syncPushPermission() {
-      setPushPermission(Notification.permission);
-      setIsPushPromptDismissed(Notification.permission === 'granted');
+    async function syncPushPermission() {
+      const permission = Notification.permission;
+      setPushPermission(permission);
+
+      if (permission !== 'granted') {
+        setIsPushPromptDismissed(false);
+        return;
+      }
+
+      setIsPushPromptDismissed(true);
+      if (!hasSupabaseConfig || !webPushVapidPublicKey || isRefreshingSubscription) return;
+
+      isRefreshingSubscription = true;
+      try {
+        await subscribeToWebPush();
+      } catch (error) {
+        console.warn('Web push subscription refresh failed', error);
+        setIsPushPromptDismissed(false);
+        setLoadError(error.message || '알림 구독을 저장하지 못했어요.');
+      } finally {
+        isRefreshingSubscription = false;
+      }
     }
 
+    syncPushPermission();
     window.addEventListener('focus', syncPushPermission);
     document.addEventListener('visibilitychange', syncPushPermission);
 
@@ -2309,14 +2330,6 @@ export default function App() {
       window.removeEventListener('focus', syncPushPermission);
       document.removeEventListener('visibilitychange', syncPushPermission);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!hasSupabaseConfig || !webPushVapidPublicKey || !isWebPushSupported() || Notification.permission !== 'granted') return;
-
-    subscribeToWebPush()
-      .then((permission) => setPushPermission(permission))
-      .catch((error) => console.warn('Web push subscription refresh failed', error));
   }, []);
 
   async function enablePushNotifications() {
