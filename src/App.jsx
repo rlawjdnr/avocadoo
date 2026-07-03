@@ -599,6 +599,27 @@ function isWebPushConfigured() {
   return hasSupabaseConfig && Boolean(getWebPushApplicationServerKey());
 }
 
+function arrayBufferEquals(left, right) {
+  if (!left || !right) return false;
+  const leftBytes = new Uint8Array(left);
+  const rightBytes = new Uint8Array(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  return leftBytes.every((byte, index) => byte === rightBytes[index]);
+}
+
+async function getValidPushSubscription(registration, applicationServerKey) {
+  const existingSubscription = await registration.pushManager.getSubscription();
+  if (!existingSubscription) return null;
+
+  const existingApplicationServerKey = existingSubscription.options?.applicationServerKey;
+  if (!existingApplicationServerKey || arrayBufferEquals(existingApplicationServerKey, applicationServerKey)) {
+    return existingSubscription;
+  }
+
+  await existingSubscription.unsubscribe();
+  return null;
+}
+
 async function savePushSubscription(subscription, memberId = currentMemberId) {
   if (!hasSupabaseConfig || !subscription) return;
 
@@ -633,7 +654,7 @@ async function subscribeToWebPush(memberId = currentMemberId) {
   await registration.update();
 
   const readyRegistration = await navigator.serviceWorker.ready;
-  const existingSubscription = await readyRegistration.pushManager.getSubscription();
+  const existingSubscription = await getValidPushSubscription(readyRegistration, applicationServerKey);
   const subscription =
     existingSubscription ||
     (await readyRegistration.pushManager.subscribe({
