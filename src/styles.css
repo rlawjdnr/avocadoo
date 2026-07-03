@@ -156,6 +156,51 @@ img {
   color: #ffffff;
 }
 
+.push-status {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: calc(72px + env(safe-area-inset-top));
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 8px 8px 14px;
+  border: 0.5px solid rgba(42, 48, 56, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(31, 38, 48, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.push-status span {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #2a3038;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.push-status-button {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
+  background: #7acc2d;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.push-status-button:disabled {
+  opacity: 0.55;
+}
+
 .phone {
   position: relative;
   width: 100%;

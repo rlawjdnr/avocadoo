@@ -363,6 +363,34 @@ function PushPrompt({ permission = 'default', isSupported = true, isConfigured =
   );
 }
 
+function PushStatus({ status = 'idle', permission = 'default', onRetry, isSaving = false }) {
+  if (permission !== 'granted') return null;
+  if (status === 'saved') return null;
+
+  const message =
+    status === 'saving'
+      ? '알림 연결 중'
+      : status === 'error'
+        ? '알림 연결이 아직 안 됐어요.'
+        : '알림 권한은 켜졌고, 연결 확인이 필요해요.';
+
+  return (
+    <motion.section
+      className="push-status"
+      role="status"
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={screenPushTransition}
+    >
+      <span>{message}</span>
+      <button className="push-status-button" type="button" onClick={onRetry} disabled={isSaving || status === 'saving'}>
+        다시 연결
+      </button>
+    </motion.section>
+  );
+}
+
 function padDatePart(value) {
   return String(value).padStart(2, '0');
 }
@@ -2507,6 +2535,7 @@ export default function App() {
   const [pushPermission, setPushPermission] = useState(() => (isWebPushSupported() ? Notification.permission : 'unsupported'));
   const [isPushPromptDismissed, setIsPushPromptDismissed] = useState(false);
   const [isPushSaving, setIsPushSaving] = useState(false);
+  const [pushSubscriptionStatus, setPushSubscriptionStatus] = useState('idle');
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
   const shouldIgnoreNextPopState = useRef(false);
@@ -2591,6 +2620,7 @@ export default function App() {
 
       if (permission !== 'granted') {
         setIsPushPromptDismissed(false);
+        setPushSubscriptionStatus('idle');
         return;
       }
 
@@ -2598,11 +2628,14 @@ export default function App() {
       if (!isWebPushConfigured() || isRefreshingSubscription) return;
 
       isRefreshingSubscription = true;
+      setPushSubscriptionStatus('saving');
       try {
         await subscribeToWebPush(selectedMemberId);
+        setPushSubscriptionStatus('saved');
       } catch (error) {
         console.warn('Web push subscription refresh failed', error);
         setIsPushPromptDismissed(true);
+        setPushSubscriptionStatus('error');
       } finally {
         isRefreshingSubscription = false;
       }
@@ -2620,13 +2653,16 @@ export default function App() {
 
   async function enablePushNotifications() {
     setIsPushSaving(true);
+    setPushSubscriptionStatus('saving');
 
     try {
       const permission = await subscribeToWebPush(selectedMemberId);
       setPushPermission(permission);
       setIsPushPromptDismissed(permission === 'granted' || permission === 'unsupported');
+      setPushSubscriptionStatus(permission === 'granted' ? 'saved' : 'idle');
     } catch (error) {
       console.warn('Web push subscription failed', error);
+      setPushSubscriptionStatus('error');
       setLoadError('알림 설정을 완료하지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsPushSaving(false);
@@ -3002,6 +3038,14 @@ export default function App() {
     <div className="screen-stage">
       {loadError ? <div className="load-error">{loadError}</div> : null}
       <AnimatePresence>
+        {pushPermission === 'granted' && pushSubscriptionStatus !== 'saved' ? (
+          <PushStatus
+            status={pushSubscriptionStatus}
+            permission={pushPermission}
+            onRetry={enablePushNotifications}
+            isSaving={isPushSaving}
+          />
+        ) : null}
         {canShowPushPrompt ? (
           <PushPrompt
             permission={pushPermission}
