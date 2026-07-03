@@ -778,16 +778,18 @@ function groupBy(items, getKey) {
   }, new Map());
 }
 
-function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, isLast = true, onRemove }) {
+function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, index = 0, isLast = true, onRemove }) {
   const src = getPhotoSrc(photo);
+  const pressedX = index * (polaroidGap.pressed - polaroidGap.rest);
 
   return (
     <motion.span
       className={`polaroid polaroid-${variant} ${add ? 'polaroid-add' : ''}`}
       aria-hidden="true"
       initial={false}
-      animate={{ marginRight: isLast ? 0 : compact ? polaroidGap.pressed : polaroidGap.rest }}
-      transition={polaroidReleaseSpring}
+      animate={{ x: compact ? pressedX : 0 }}
+      style={{ marginRight: isLast ? 0 : polaroidGap.rest }}
+      transition={compact ? polaroidPressSpring : polaroidReleaseSpring}
     >
       <span className="polaroid-paper">
         <span className="polaroid-image">
@@ -862,6 +864,7 @@ function PhotoStack({ onAdd, photos }) {
           photo={photo}
           variant={variants[index]}
           compact={isPressed}
+          index={index}
           isLast={index === visible.length - 1}
         />
       ))}

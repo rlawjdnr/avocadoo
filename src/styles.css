@@ -513,6 +513,7 @@ img {
   height: 123px;
   padding: 0;
   background: transparent;
+  will-change: transform;
 }
 
 .polaroid-right {
