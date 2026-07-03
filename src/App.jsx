@@ -365,14 +365,15 @@ function PushPrompt({ permission = 'default', isSupported = true, isConfigured =
 
 function PushStatus({ status = 'idle', permission = 'default', onRetry, isSaving = false }) {
   if (permission !== 'granted') return null;
-  if (status === 'saved') return null;
 
   const message =
     status === 'saving'
       ? '알림 연결 중'
       : status === 'error'
         ? '알림 연결이 아직 안 됐어요.'
-        : '알림 권한은 켜졌고, 연결 확인이 필요해요.';
+        : status === 'saved'
+          ? '알림 연결됨'
+          : '알림 권한은 켜졌고, 연결 확인이 필요해요.';
 
   return (
     <motion.section
@@ -385,7 +386,7 @@ function PushStatus({ status = 'idle', permission = 'default', onRetry, isSaving
     >
       <span>{message}</span>
       <button className="push-status-button" type="button" onClick={onRetry} disabled={isSaving || status === 'saving'}>
-        다시 연결
+        재연결
       </button>
     </motion.section>
   );
@@ -635,9 +636,14 @@ function arrayBufferEquals(left, right) {
   return leftBytes.every((byte, index) => byte === rightBytes[index]);
 }
 
-async function getValidPushSubscription(registration, applicationServerKey) {
+async function getValidPushSubscription(registration, applicationServerKey, forceRefresh = false) {
   const existingSubscription = await registration.pushManager.getSubscription();
   if (!existingSubscription) return null;
+
+  if (forceRefresh) {
+    await existingSubscription.unsubscribe();
+    return null;
+  }
 
   const existingApplicationServerKey = existingSubscription.options?.applicationServerKey;
   if (existingApplicationServerKey && arrayBufferEquals(existingApplicationServerKey, applicationServerKey)) {
@@ -669,7 +675,7 @@ async function savePushSubscription(subscription, memberId = currentMemberId) {
   if (error) throw error;
 }
 
-async function subscribeToWebPush(memberId = currentMemberId) {
+async function subscribeToWebPush(memberId = currentMemberId, { forceRefresh = false } = {}) {
   const applicationServerKey = getWebPushApplicationServerKey();
   if (!hasSupabaseConfig || !applicationServerKey || !isWebPushSupported()) return 'unsupported';
 
@@ -682,7 +688,7 @@ async function subscribeToWebPush(memberId = currentMemberId) {
   await registration.update();
 
   const readyRegistration = await navigator.serviceWorker.ready;
-  const existingSubscription = await getValidPushSubscription(readyRegistration, applicationServerKey);
+  const existingSubscription = await getValidPushSubscription(readyRegistration, applicationServerKey, forceRefresh);
   const subscription =
     existingSubscription ||
     (await readyRegistration.pushManager.subscribe({
@@ -2651,12 +2657,12 @@ export default function App() {
     };
   }, [selectedMemberId]);
 
-  async function enablePushNotifications() {
+  async function enablePushNotifications({ forceRefresh = false } = {}) {
     setIsPushSaving(true);
     setPushSubscriptionStatus('saving');
 
     try {
-      const permission = await subscribeToWebPush(selectedMemberId);
+      const permission = await subscribeToWebPush(selectedMemberId, { forceRefresh });
       setPushPermission(permission);
       setIsPushPromptDismissed(permission === 'granted' || permission === 'unsupported');
       setPushSubscriptionStatus(permission === 'granted' ? 'saved' : 'idle');
@@ -2671,6 +2677,10 @@ export default function App() {
 
   function dismissPushPrompt() {
     setIsPushPromptDismissed(true);
+  }
+
+  function reconnectPushNotifications() {
+    void enablePushNotifications({ forceRefresh: true });
   }
 
   function getScreenTransition(nextScreen) {
@@ -3038,11 +3048,11 @@ export default function App() {
     <div className="screen-stage">
       {loadError ? <div className="load-error">{loadError}</div> : null}
       <AnimatePresence>
-        {pushPermission === 'granted' && pushSubscriptionStatus !== 'saved' ? (
+        {pushPermission === 'granted' && isPushConfigured ? (
           <PushStatus
             status={pushSubscriptionStatus}
             permission={pushPermission}
-            onRetry={enablePushNotifications}
+            onRetry={reconnectPushNotifications}
             isSaving={isPushSaving}
           />
         ) : null}

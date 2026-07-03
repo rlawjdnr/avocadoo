@@ -160,7 +160,7 @@ img {
   position: absolute;
   left: 16px;
   right: 16px;
-  top: calc(72px + env(safe-area-inset-top));
+  bottom: 22px;
   z-index: 130;
   display: flex;
   align-items: center;

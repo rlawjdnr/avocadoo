@@ -35,6 +35,12 @@ type PushSubscriptionRow = {
   auth: string;
 };
 
+type WebPushError = {
+  statusCode?: number;
+  body?: string;
+  message?: string;
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -176,20 +182,29 @@ Deno.serve(async (request) => {
 
         return { id: subscription.id, sent: true };
       } catch (error) {
-        const statusCode = (error as { statusCode?: number }).statusCode;
+        const webPushError = error as WebPushError;
+        const statusCode = webPushError.statusCode;
         if (statusCode === 404 || statusCode === 410) {
           await supabase.from('push_subscriptions').delete().eq('id', subscription.id);
         }
 
-        throw error;
+        throw {
+          id: subscription.id,
+          statusCode,
+          message: webPushError.message || 'Web push send failed',
+          body: webPushError.body,
+        };
       }
     })
   );
 
   const sent = settled.filter((result) => result.status === 'fulfilled').length;
   const failed = settled.length - sent;
+  const failures = settled
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason);
 
-  return jsonResponse({ sent, failed });
+  return jsonResponse({ sent, failed, failures });
   } catch (error) {
     console.error(error);
     return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown web push error' }, 500);
