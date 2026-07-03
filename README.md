@@ -43,6 +43,11 @@ Supabase SQL Editor에서 `supabase/schema.sql`을 실행하면 아래 리소스
 브라우저 웹 푸시는 Supabase Edge Function `send-web-push`에서 발송합니다.
 
 1. VAPID 키를 생성합니다.
+
+```bash
+npm run vapid
+```
+
 2. 프론트엔드 `.env`에 `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`를 넣습니다.
 3. Supabase Edge Function secret에 아래 값을 넣습니다.
 
@@ -54,6 +59,8 @@ PUBLIC_SITE_URL=https://rlawjdnr.github.io/avocadoo/
 ```
 
 4. `supabase/functions/send-web-push`를 배포합니다.
+
+GitHub Pages 배포에서는 repository secret `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`에도 같은 public key를 넣어야 합니다. 이 값이 `replace-with-vapid-public-key` 같은 placeholder이거나 잘못된 Base64 URL 값이면 앱은 알림 구독을 시도하지 않습니다.
 
 일기를 등록하면 같은 커플 공간의 다른 멤버에게, 좋아요와 댓글은 해당 일기 작성자에게 푸시가 발송됩니다.
 

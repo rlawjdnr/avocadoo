@@ -34,8 +34,9 @@ const coupleSpaceId = import.meta.env.VITE_SUPABASE_COUPLE_SPACE_ID || '11111111
 const currentMemberId = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_ID || '22222222-2222-4222-8222-222222222221';
 const currentMemberNickname = import.meta.env.VITE_SUPABASE_CURRENT_MEMBER_NICKNAME || '정정욱';
 const storageBucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'diary-images';
-const defaultWebPushVapidPublicKey = 'BAo8gRVBc4zCwpkWat48097mHx-eMq_2Lw1dNLgmkIJn7VAz7sSXNdU53Mt5DS2HQmIvlecyq_qDBBxSk7dG3pA';
+const defaultWebPushVapidPublicKey = 'BI76dNht98do37YIddG6gY-S7y3fZAwcN1cdJOAl3kezu6YpXgG5gwXStv2O0kZBHFcMqy06kHvLGaa09Eel93g';
 const webPushVapidPublicKey = (import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || defaultWebPushVapidPublicKey).trim();
+const placeholderVapidPublicKeys = new Set(['your-vapid-public-key', 'replace-with-vapid-public-key']);
 const memberNicknames = ['혜민민', '정정욱'];
 const seededMemberIdsByNickname = {
   혜민민: '22222222-2222-4222-8222-222222222222',
@@ -184,6 +185,12 @@ const screenPushShadowTransition = {
   boxShadow: { duration: 0.14, ease: 'easeOut' },
 };
 const splashMinimumDurationMs = 2000;
+const instagramLikeHapticMs = 10;
+
+function triggerInstagramLikeHaptic() {
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+  navigator.vibrate(instagramLikeHapticMs);
+}
 
 function getBackScreen(screen, previousScreen) {
   if (screen === 'list') return 'home';
@@ -392,6 +399,18 @@ function getMonthIndex(months, monthDate) {
   return Math.max(0, months.findIndex((month) => month.key === monthKey));
 }
 
+function getHomeRenderableMonthIndexes(activeMonthIndex, monthCount) {
+  const indexes = new Set();
+  const firstIndex = Math.max(0, activeMonthIndex - 1);
+  const lastIndex = Math.min(monthCount - 1, activeMonthIndex + 1);
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    indexes.add(index);
+  }
+
+  return indexes;
+}
+
 function getMonthLastDay(monthStart) {
   return new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
 }
@@ -490,6 +509,20 @@ function getPhotoSrc(photo) {
   return photo.src || photo.image_url || photo.publicUrl || '';
 }
 
+function getPhotoStoragePath(photo) {
+  if (!photo || typeof photo === 'string') return '';
+  return photo.storagePath || photo.storage_path || '';
+}
+
+function getOptimizedPhotoSrc(photo, transform) {
+  const originalSrc = getPhotoSrc(photo);
+  const storagePath = getPhotoStoragePath(photo);
+  if (!hasSupabaseConfig || !supabase || !storagePath || !transform) return originalSrc;
+
+  const { data } = supabase.storage.from(storageBucket).getPublicUrl(storagePath, { transform });
+  return data?.publicUrl || originalSrc;
+}
+
 function isSupabaseUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
 }
@@ -550,6 +583,22 @@ function urlBase64ToUint8Array(base64String) {
   return bytes.buffer;
 }
 
+function getWebPushApplicationServerKey() {
+  if (!webPushVapidPublicKey || placeholderVapidPublicKeys.has(webPushVapidPublicKey)) return null;
+
+  try {
+    const applicationServerKey = urlBase64ToUint8Array(webPushVapidPublicKey);
+    const bytes = new Uint8Array(applicationServerKey);
+    return bytes.length === 65 && bytes[0] === 4 ? applicationServerKey : null;
+  } catch {
+    return null;
+  }
+}
+
+function isWebPushConfigured() {
+  return hasSupabaseConfig && Boolean(getWebPushApplicationServerKey());
+}
+
 async function savePushSubscription(subscription, memberId = currentMemberId) {
   if (!hasSupabaseConfig || !subscription) return;
 
@@ -572,7 +621,8 @@ async function savePushSubscription(subscription, memberId = currentMemberId) {
 }
 
 async function subscribeToWebPush(memberId = currentMemberId) {
-  if (!hasSupabaseConfig || !webPushVapidPublicKey || !isWebPushSupported()) return 'unsupported';
+  const applicationServerKey = getWebPushApplicationServerKey();
+  if (!hasSupabaseConfig || !applicationServerKey || !isWebPushSupported()) return 'unsupported';
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission;
@@ -588,7 +638,7 @@ async function subscribeToWebPush(memberId = currentMemberId) {
     existingSubscription ||
     (await readyRegistration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(webPushVapidPublicKey),
+      applicationServerKey,
     }));
 
   await savePushSubscription(subscription, memberId);
@@ -680,6 +730,54 @@ function revokePhotoPreviewUrls(photos) {
   photos.forEach((photo) => {
     if (photo?.file && photo.src?.startsWith('blob:')) URL.revokeObjectURL(photo.src);
   });
+}
+
+function replaceFileExtension(fileName, extension) {
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  return `${baseName || 'photo'}.${extension}`;
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, type, quality);
+  });
+}
+
+async function compressPhotoForUpload(file) {
+  if (typeof window === 'undefined' || !file?.type?.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') {
+    return file;
+  }
+
+  const imageUrl = URL.createObjectURL(file);
+  const image = new Image();
+
+  try {
+    image.src = imageUrl;
+    await image.decode();
+
+    const maxDimension = 1600;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return file;
+
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], replaceFileExtension(file.name, 'jpg'), {
+      type: blob.type,
+      lastModified: file.lastModified,
+    });
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
 }
 
 function formatDateLabel(value) {
@@ -778,8 +876,29 @@ function groupBy(items, getKey) {
   }, new Map());
 }
 
+function PhotoImage({ photo, transform, eager = false }) {
+  const originalSrc = getPhotoSrc(photo);
+  const optimizedSrc = getOptimizedPhotoSrc(photo, transform);
+  const [src, setSrc] = useState(optimizedSrc);
+
+  useEffect(() => {
+    setSrc(optimizedSrc);
+  }, [optimizedSrc]);
+
+  return (
+    <img
+      src={src}
+      alt=""
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      onError={() => {
+        if (src !== originalSrc) setSrc(originalSrc);
+      }}
+    />
+  );
+}
+
 function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, index = 0, isLast = true, onRemove }) {
-  const src = getPhotoSrc(photo);
   const pressedX = index * (polaroidGap.pressed - polaroidGap.rest);
 
   return (
@@ -793,7 +912,7 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
     >
       <span className="polaroid-paper">
         <span className="polaroid-image">
-          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <img src={src} alt="" />}
+          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={{ width: 360, height: 360, resize: 'cover', quality: 70 }} eager={isLast} />}
         </span>
       </span>
       {!add && onRemove ? (
@@ -974,45 +1093,47 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
   );
 }
 
-function HomeMonthPage({ weeks, onSelectWeek }) {
+function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
   return (
-    <div className="home-month-page">
-      <div className="week-list">
-        {weeks.map((week) => {
-          const hasDiary = week.photos.length > 0;
-          const content = (
-            <>
-              <span className="week-copy">
-                <strong>{week.range}</strong>
-                <em>{week.label}</em>
-              </span>
-              <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload', 'add-polaroid')} />
-            </>
-          );
+    <div className="home-month-page" aria-hidden={!isRenderable}>
+      {isRenderable ? (
+        <div className="week-list">
+          {weeks.map((week) => {
+            const hasDiary = week.photos.length > 0;
+            const content = (
+              <>
+                <span className="week-copy">
+                  <strong>{week.range}</strong>
+                  <em>{week.label}</em>
+                </span>
+                <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload', 'add-polaroid')} />
+              </>
+            );
 
-          if (hasDiary) {
+            if (hasDiary) {
+              return (
+                <button
+                  className="week-card week-card-clickable"
+                  type="button"
+                  key={week.id}
+                  onClick={() => onSelectWeek(week)}
+                >
+                  {content}
+                </button>
+              );
+            }
+
             return (
-              <button
-                className="week-card week-card-clickable"
-                type="button"
+              <article
+                className="week-card"
                 key={week.id}
-                onClick={() => onSelectWeek(week)}
               >
                 {content}
-              </button>
+              </article>
             );
-          }
-
-          return (
-            <article
-              className="week-card"
-              key={week.id}
-            >
-              {content}
-            </article>
-          );
-        })}
-      </div>
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1086,17 +1207,58 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
   const monthViewportRef = useRef(null);
   const monthGesture = useRef(null);
   const monthAnimation = useRef(null);
+  const monthTrackFrame = useRef(null);
+  const pendingMonthTrackX = useRef(null);
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
-  const activeWeeks = useMemo(() => applyEntriesToWeeks(buildMonthWeeks(activeMonthDate), entries), [activeMonthDate, entries]);
+  const renderableMonthIndexes = useMemo(() => getHomeRenderableMonthIndexes(activeMonthIndex, monthPages.length), [activeMonthIndex, monthPages.length]);
+  const monthWeeksByKey = useMemo(() => {
+    const nextMonthWeeks = new Map();
+
+    renderableMonthIndexes.forEach((index) => {
+      const month = monthPages[index];
+      if (month) nextMonthWeeks.set(month.key, applyEntriesToWeeks(buildMonthWeeks(month.date), entries));
+    });
+
+    return nextMonthWeeks;
+  }, [entries, monthPages, renderableMonthIndexes]);
+  const activeWeeks = monthWeeksByKey.get(getMonthKey(activeMonthDate)) || [];
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
 
   function getMonthPageWidth(viewport) {
     return viewport?.clientWidth || screenPushDistance;
   }
 
+  function flushScheduledMonthTrackPosition() {
+    monthTrackFrame.current = null;
+    if (pendingMonthTrackX.current === null) return;
+
+    monthTrackX.set(pendingMonthTrackX.current);
+    pendingMonthTrackX.current = null;
+  }
+
+  function setMonthTrackPositionOnFrame(value) {
+    pendingMonthTrackX.current = value;
+    if (monthTrackFrame.current !== null) return;
+
+    monthTrackFrame.current = window.requestAnimationFrame(flushScheduledMonthTrackPosition);
+  }
+
+  function cancelScheduledMonthTrackPosition() {
+    if (monthTrackFrame.current !== null) {
+      window.cancelAnimationFrame(monthTrackFrame.current);
+      monthTrackFrame.current = null;
+    }
+
+    if (pendingMonthTrackX.current !== null) {
+      monthTrackX.set(pendingMonthTrackX.current);
+      pendingMonthTrackX.current = null;
+    }
+  }
+
   function stopMonthAnimation() {
+    cancelScheduledMonthTrackPosition();
     monthAnimation.current?.stop();
     monthAnimation.current = null;
   }
@@ -1134,19 +1296,35 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     animateMonthTrack(-activeMonthIndex * getMonthPageWidth(viewport));
   }
 
+  function commitMonthChange(nextMonthIndex) {
+    const nextMonthDate = monthPages[nextMonthIndex].date;
+    setActiveMonthIndex(nextMonthIndex);
+    onChangeMonth(nextMonthDate);
+  }
+
   function moveToMonth(nextMonthIndex, viewport, animated = true) {
     const clampedIndex = Math.min(Math.max(nextMonthIndex, 0), monthPages.length - 1);
     const targetTrackX = -clampedIndex * getMonthPageWidth(viewport);
-    const nextMonthDate = monthPages[clampedIndex].date;
+    const canDeferMonthCommit = animated && Math.abs(clampedIndex - activeMonthIndex) === 1;
 
-    setActiveMonthIndex(clampedIndex);
-    onChangeMonth(nextMonthDate);
+    if (clampedIndex === activeMonthIndex) {
+      if (animated) snapMonthBack(viewport);
+      else setMonthTrackPosition(targetTrackX);
+      return;
+    }
 
     if (animated) {
+      if (canDeferMonthCommit) {
+        animateMonthTrack(targetTrackX, () => commitMonthChange(clampedIndex));
+        return;
+      }
+
+      commitMonthChange(clampedIndex);
       animateMonthTrack(targetTrackX);
       return;
     }
 
+    commitMonthChange(clampedIndex);
     setMonthTrackPosition(targetTrackX);
   }
 
@@ -1188,7 +1366,7 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     const monthPageWidth = getMonthPageWidth(viewport);
     const minTrackX = -(monthPages.length - 1) * monthPageWidth;
     const nextTrackX = Math.min(Math.max(gesture.startTrackX + deltaX, minTrackX), 0);
-    monthTrackX.set(nextTrackX);
+    setMonthTrackPositionOnFrame(nextTrackX);
     return true;
   }
 
@@ -1197,6 +1375,7 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     const gesture = monthGesture.current;
     if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
 
+    cancelScheduledMonthTrackPosition();
     monthGesture.current = null;
 
     if (cancelled) {
@@ -1240,6 +1419,7 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
     resetMonthTrack(viewport);
 
     return () => {
+      cancelScheduledMonthTrackPosition();
       stopMonthAnimation();
     };
   }, [screenPushDistance]);
@@ -1311,10 +1491,11 @@ function Home({ active = true, monthDate, entries, onChangeMonth, onSelectWeek, 
           className="home-month-track"
           style={{ x: monthTrackX }}
         >
-          {monthPages.map((month) => (
+          {monthPages.map((month, index) => (
             <HomeMonthPage
               key={month.key}
-              weeks={month.key === getMonthKey(activeMonthDate) ? activeWeeks : applyEntriesToWeeks(buildMonthWeeks(month.date), entries)}
+              weeks={monthWeeksByKey.get(month.key) || []}
+              isRenderable={renderableMonthIndexes.has(index)}
               onSelectWeek={handleSelectWeek}
             />
           ))}
@@ -1428,7 +1609,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
             }}
           >
-            <img src={getPhotoSrc(photo)} alt="" />
+            <PhotoImage photo={photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager={index === 0} />
           </motion.span>
         ))}
         <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span>
@@ -2107,10 +2288,11 @@ async function uploadDiaryPhotos(entryId, photos) {
 
   for (const [index, photo] of photos.entries()) {
     if (!photo.file) continue;
-    const extension = photo.file.name.split('.').pop() || 'jpg';
+    const uploadFile = await compressPhotoForUpload(photo.file);
+    const extension = uploadFile.name.split('.').pop() || 'jpg';
     const storagePath = `${coupleSpaceId}/${entryId}/${index}-${crypto.randomUUID()}.${extension}`;
-    const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, photo.file, {
-      cacheControl: '3600',
+    const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, uploadFile, {
+      cacheControl: '31536000',
       upsert: false,
     });
 
@@ -2312,7 +2494,7 @@ export default function App() {
   const selectedMemberId = memberPair.selectedMemberId;
   const selectedMemberNickname = memberPair.selectedNickname;
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
-  const isPushConfigured = hasSupabaseConfig && Boolean(webPushVapidPublicKey);
+  const isPushConfigured = isWebPushConfigured();
   const isPushSupported = isWebPushSupported();
   const canShowPushPrompt =
     isPushConfigured &&
@@ -2392,15 +2574,14 @@ export default function App() {
       }
 
       setIsPushPromptDismissed(true);
-      if (!hasSupabaseConfig || !webPushVapidPublicKey || isRefreshingSubscription) return;
+      if (!isWebPushConfigured() || isRefreshingSubscription) return;
 
       isRefreshingSubscription = true;
       try {
         await subscribeToWebPush(selectedMemberId);
       } catch (error) {
         console.warn('Web push subscription refresh failed', error);
-        setIsPushPromptDismissed(false);
-        setLoadError(error.message || '알림 구독을 저장하지 못했어요.');
+        setIsPushPromptDismissed(true);
       } finally {
         isRefreshingSubscription = false;
       }
@@ -2422,9 +2603,10 @@ export default function App() {
     try {
       const permission = await subscribeToWebPush(selectedMemberId);
       setPushPermission(permission);
-      setIsPushPromptDismissed(permission === 'granted');
+      setIsPushPromptDismissed(permission === 'granted' || permission === 'unsupported');
     } catch (error) {
-      setLoadError(error.message || '알림을 켜지 못했어요.');
+      console.warn('Web push subscription failed', error);
+      setLoadError('알림 설정을 완료하지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsPushSaving(false);
     }
@@ -2593,6 +2775,9 @@ export default function App() {
       setEntriesAndCache((current) => current.map((entry) => (entry.id === entryId ? { ...entry, liked, likeCount } : entry)));
     };
 
+    if (nextLiked) {
+      triggerInstagramLikeHaptic();
+    }
     applyLikeState(nextLiked, nextLikeCount);
 
     if (!hasSupabaseConfig) {
@@ -2638,6 +2823,9 @@ export default function App() {
       );
     };
 
+    if (nextLiked) {
+      triggerInstagramLikeHaptic();
+    }
     applyCommentLikeState(nextLiked, nextLikeCount);
 
     if (!hasSupabaseConfig) {

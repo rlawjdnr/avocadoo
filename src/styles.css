@@ -215,6 +215,8 @@ img {
   display: flex;
   width: max-content;
   min-height: 100%;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .home-month-page {
@@ -222,6 +224,7 @@ img {
   flex: 0 0 100vw;
   width: 100vw;
   min-height: 100%;
+  contain: layout paint style;
 }
 
 .home-header {

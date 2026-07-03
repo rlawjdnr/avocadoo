@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test": "node tests/design.spec.js",
+    "vapid": "node scripts/generate-vapid-keys.mjs",
     "deploy:check": "npm test && npm run build",
     "deploy": "npm run deploy:check && git push origin main"
   },
