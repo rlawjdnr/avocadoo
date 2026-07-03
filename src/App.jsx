@@ -640,7 +640,7 @@ async function getValidPushSubscription(registration, applicationServerKey) {
   if (!existingSubscription) return null;
 
   const existingApplicationServerKey = existingSubscription.options?.applicationServerKey;
-  if (!existingApplicationServerKey || arrayBufferEquals(existingApplicationServerKey, applicationServerKey)) {
+  if (existingApplicationServerKey && arrayBufferEquals(existingApplicationServerKey, applicationServerKey)) {
     return existingSubscription;
   }
 
