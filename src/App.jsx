@@ -2277,7 +2277,7 @@ function SplashScreen() {
       aria-label="앱 로딩 중"
       initial={false}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.58, 1] }}
     >
       <img className="splash-logo" src={assets.logo} alt="" />
     </motion.div>
