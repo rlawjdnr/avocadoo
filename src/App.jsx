@@ -1688,7 +1688,8 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false }) {
+  const [isStackPressed, setIsStackPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
   const [focusedPhoto, setFocusedPhoto] = useState(null);
@@ -1696,8 +1697,20 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const visible = photos.slice(0, maxUploadPhotos);
   if (visible.length === 0) return null;
   const releasePhotoPress = () => setPressedPhotoIndex(null);
+  const releaseStackPress = () => setIsStackPressed(false);
   const expanded = lockedExpanded || isExpanded;
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
+  const stackInteractionProps = focusEnabled
+    ? {}
+    : {
+        onPointerDown: () => setIsStackPressed(true),
+        onPointerUp: releaseStackPress,
+        onPointerCancel: releaseStackPress,
+        onPointerLeave: releaseStackPress,
+        onClick: () => {
+          if (!lockedExpanded) setIsExpanded((current) => !current);
+        },
+      };
 
   function focusPhoto(photo, index) {
     const node = photoRefs.current[index];
@@ -1735,10 +1748,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       <motion.div
         className="large-stack"
         initial={false}
-        animate={{ width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
+        animate={{ scale: isStackPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
         transition={{
+          scale: isStackPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring,
           width: largePolaroidSpring,
         }}
+        {...stackInteractionProps}
       >
         {visible.map((photo, index) => (
           <motion.span
@@ -1749,7 +1764,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 delete photoRefs.current[index];
               }
             }}
-            className={`large-photo large-photo-${index + 1} ${focusedPhoto?.index === index ? 'large-photo-focused-source' : ''}`}
+            className={`large-photo large-photo-${index + 1} ${focusEnabled && focusedPhoto?.index === index ? 'large-photo-focused-source' : ''}`}
             key={`${photo.id || photo}-${index}`}
             initial={false}
             animate={
@@ -1760,7 +1775,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     top: 0,
                     x: 0,
                     y: 0,
-                    scale: pressedPhotoIndex === index ? 0.97 : 1,
+                    scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
                   }
                 : {
                     left: largePolaroidRest[index].left,
@@ -1768,7 +1783,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     top: largePolaroidRest[index].top,
                     x: 0,
                     y: 0,
-                    scale: pressedPhotoIndex === index ? 0.97 : 1,
+                    scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
                   }
             }
             transition={{
@@ -1789,32 +1804,36 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               scale: largePolaroidFocusSpring,
               delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
             }}
-            role="button"
-            tabIndex={0}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              setPressedPhotoIndex(index);
-            }}
-            onPointerUp={releasePhotoPress}
-            onPointerCancel={releasePhotoPress}
-            onPointerLeave={releasePhotoPress}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!expanded && !lockedExpanded) {
-                if (!lockedExpanded) setIsExpanded((current) => !current);
-                return;
-              }
-              focusPhoto(photo, index);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return;
-              event.preventDefault();
-              if (!expanded && !lockedExpanded) {
-                if (!lockedExpanded) setIsExpanded((current) => !current);
-                return;
-              }
-              focusPhoto(photo, index);
-            }}
+            role={focusEnabled ? 'button' : undefined}
+            tabIndex={focusEnabled ? 0 : undefined}
+            onPointerDown={
+              focusEnabled
+                ? (event) => {
+                    event.stopPropagation();
+                    setPressedPhotoIndex(index);
+                  }
+                : undefined
+            }
+            onPointerUp={focusEnabled ? releasePhotoPress : undefined}
+            onPointerCancel={focusEnabled ? releasePhotoPress : undefined}
+            onPointerLeave={focusEnabled ? releasePhotoPress : undefined}
+            onClick={
+              focusEnabled
+                ? (event) => {
+                    event.stopPropagation();
+                    focusPhoto(photo, index);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              focusEnabled
+                ? (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    focusPhoto(photo, index);
+                  }
+                : undefined
+            }
           >
             <PhotoImage photo={photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager={index === 0} />
           </motion.span>
@@ -1822,7 +1841,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
         <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span>
       </motion.div>
       <AnimatePresence>
-        {focusedPhoto && typeof document !== 'undefined'
+        {focusEnabled && focusedPhoto && typeof document !== 'undefined'
           ? createPortal(
               <motion.div
                 className="large-photo-focus-layer"
@@ -1987,7 +2006,7 @@ function DiaryDetailCard({ entry, onToggleLike, onOpenComments, onEdit }) {
     <article className="diary-item diary-item-created diary-item-detail">
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
       <DiaryCardBody entry={normalizedEntry} />
-      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded lockedExpanded />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded lockedExpanded focusEnabled />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} detail />
     </article>
   );
