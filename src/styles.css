@@ -961,6 +961,10 @@ img {
   margin: 0 auto;
 }
 
+.large-stack-clickable {
+  cursor: pointer;
+}
+
 .large-stack-scroll-expanded .large-stack {
   margin-left: 0;
   margin-right: 0;
