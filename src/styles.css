@@ -1056,12 +1056,20 @@ img {
   line-height: 16px;
 }
 
-.diary-body p {
+.diary-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.diary-entry-text p {
   margin: 0;
   width: 100%;
   color: #2a3038;
   font-size: 15px;
   line-height: 22px;
+  overflow-wrap: anywhere;
 }
 
 .diary-body-clickable {

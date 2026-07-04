@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
@@ -112,6 +112,7 @@ const screenPushTransition = {
 };
 
 const defaultScreenPushDistance = 390;
+const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
 const uploadGridColumnCount = 3;
 const uploadFieldSpring = {
@@ -853,6 +854,34 @@ function getWeekIdForDate(value) {
   if (Number.isNaN(date.getTime())) return '';
   const weekStartDay = Math.floor((date.getDate() - 1) / 7) * 7 + 1;
   return `week-${toDateInputValue(new Date(date.getFullYear(), date.getMonth(), weekStartDay))}`;
+}
+
+function getDeepLinkedEntryId() {
+  if (typeof window === 'undefined') return '';
+
+  return new URLSearchParams(window.location.search).get('entry') || '';
+}
+
+function getMonthStartForDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return initialMonthStart;
+
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getWeekForEntry(entry, entries) {
+  const monthStart = getMonthStartForDate(entry.date);
+  const monthWeeks = applyEntriesToWeeks(buildMonthWeeks(monthStart), entries);
+
+  return monthWeeks.find((week) => week.id === entry.weekId) || monthWeeks.find((week) => week.id === getWeekIdForDate(entry.date)) || {
+    id: entry.weekId || getWeekIdForDate(entry.date),
+    range: formatDateLabel(entry.date),
+    label: formatWeekday(entry.date),
+    startDate: entry.date,
+    endDate: entry.date,
+    isFuture: false,
+    photos: entry.photos || [],
+  };
 }
 
 function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
@@ -1698,6 +1727,32 @@ function DiaryCardHeader({ entry, onEdit }) {
   );
 }
 
+function DiaryEntryText({ text }) {
+  const paragraphs = String(text || '')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="diary-entry-text">
+      {paragraphs.map((paragraph, paragraphIndex) => {
+        const lines = paragraph.split('\n');
+
+        return (
+          <p key={`${paragraph}-${paragraphIndex}`}>
+            {lines.map((line, lineIndex) => (
+              <Fragment key={`${line}-${lineIndex}`}>
+                {line}
+                {lineIndex < lines.length - 1 ? <br /> : null}
+              </Fragment>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function DiaryCardBody({ entry, onOpen }) {
   const bodyProps = onOpen
     ? {
@@ -1719,7 +1774,7 @@ function DiaryCardBody({ entry, onOpen }) {
         <img src={writerAvatar} alt="" />
         <strong>{entry.nickname}</strong>
       </div>
-      <p>{entry.text}</p>
+      <DiaryEntryText text={entry.text} />
       {entry.location ? (
         <span className="location-chip">
           <img src={assets.locationPin} alt="" />{entry.location}에서
@@ -2544,6 +2599,9 @@ export default function App() {
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
   const shouldIgnoreNextPopState = useRef(false);
+  const consumedDeepLinkedEntryId = useRef('');
+  const screenTransitionResetTimer = useRef(null);
+  const screenTransitionRunId = useRef(0);
   const screenPushDistance = useViewportWidth();
   const memberPair = useMemo(() => getMemberPairForNickname(selectedNickname), [selectedNickname]);
   const selectedMemberId = memberPair.selectedMemberId;
@@ -2611,8 +2669,29 @@ export default function App() {
     previousScreenRef.current = previousScreen;
   }, [screen, previousScreen]);
 
+  useEffect(() => () => {
+    if (screenTransitionResetTimer.current) window.clearTimeout(screenTransitionResetTimer.current);
+  }, []);
+
   useEffect(() => {
-    window.history.replaceState({ avocadooScreen: screen }, '', window.location.href);
+    if (!isInitialDataLoaded) return;
+
+    const entryId = getDeepLinkedEntryId();
+    if (!entryId || consumedDeepLinkedEntryId.current === entryId) return;
+
+    const linkedEntry = entries.find((entry) => entry.id === entryId);
+    if (!linkedEntry) return;
+
+    consumedDeepLinkedEntryId.current = entryId;
+    setSelectedEntryId(linkedEntry.id);
+    setHomeMonth(getMonthStartForDate(linkedEntry.date));
+    setSelectedWeek(getWeekForEntry(linkedEntry, entries));
+    applyNavigation('comment', { pushHistory: false, animate: false });
+  }, [entries, isInitialDataLoaded]);
+
+  useEffect(() => {
+    replaceHomeHistoryState('guard');
+    pushHomeHistoryState();
   }, []);
 
   useEffect(() => {
@@ -2682,6 +2761,21 @@ export default function App() {
     void enablePushNotifications({ forceRefresh: true });
   }
 
+  function getHomeHistoryState(kind = 'entry') {
+    return {
+      avocadooScreen: 'home',
+      avocadooHomeHistory: kind,
+    };
+  }
+
+  function replaceHomeHistoryState(kind = 'entry') {
+    window.history.replaceState(getHomeHistoryState(kind), '', window.location.href);
+  }
+
+  function pushHomeHistoryState() {
+    window.history.pushState(getHomeHistoryState('entry'), '', window.location.href);
+  }
+
   function getScreenTransition(nextScreen) {
     const currentScreen = screenRef.current;
 
@@ -2709,8 +2803,25 @@ export default function App() {
   function applyNavigation(nextScreen, { pushHistory = true, animate = true } = {}) {
     const currentScreen = screenRef.current;
     const previousScreen = previousScreenRef.current;
+    const nextTransition = animate ? getScreenTransition(nextScreen) : 'none';
 
-    setScreenTransition(animate ? getScreenTransition(nextScreen) : 'none');
+    if (screenTransitionResetTimer.current) {
+      window.clearTimeout(screenTransitionResetTimer.current);
+      screenTransitionResetTimer.current = null;
+    }
+
+    screenTransitionRunId.current += 1;
+    const transitionRunId = screenTransitionRunId.current;
+
+    setScreenTransition(nextTransition);
+    if (nextTransition !== 'none') {
+      screenTransitionResetTimer.current = window.setTimeout(() => {
+        if (screenTransitionRunId.current !== transitionRunId) return;
+        setScreenTransition('none');
+        screenTransitionResetTimer.current = null;
+      }, screenTransitionResetMs);
+    }
+
     setPreviousScreen(currentScreen);
     setScreen(nextScreen);
     screenRef.current = nextScreen;
@@ -2724,6 +2835,11 @@ export default function App() {
       }
 
       window.history.pushState({ avocadooScreen: nextScreen }, '', window.location.href);
+      return;
+    }
+
+    if (nextScreen === 'home' && typeof window !== 'undefined') {
+      replaceHomeHistoryState();
     }
   }
 
@@ -2750,7 +2866,7 @@ export default function App() {
       }
 
       if (screenRef.current === 'home') {
-        window.history.pushState({ avocadooScreen: 'home' }, '', window.location.href);
+        pushHomeHistoryState();
         return;
       }
 
