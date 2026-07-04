@@ -1737,7 +1737,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       },
       targetX,
       targetY,
+      open: false,
       closing: false,
+    });
+
+    requestAnimationFrame(() => {
+      setFocusedPhoto((current) => (current?.index === index && !current.closing ? { ...current, open: true } : current));
     });
   }
 
@@ -1878,9 +1883,9 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                   }}
                   initial={{ x: 0, y: 0, scale: 1, rotate: 0 }}
                   animate={
-                    focusedPhoto.closing
-                      ? { x: 0, y: 0, scale: 1, rotate: 0 }
-                      : { x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }
+                    focusedPhoto.open && !focusedPhoto.closing
+                      ? { x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }
+                      : { x: 0, y: 0, scale: 1, rotate: 0 }
                   }
                   transition={largePolaroidFocusSpring}
                   onAnimationComplete={() => {
