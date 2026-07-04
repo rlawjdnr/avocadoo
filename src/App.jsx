@@ -903,6 +903,8 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
         id: comment.id,
         nickname: comment.couple_members?.nickname || getNicknameForMemberId(comment.author_id),
         text: comment.body_text,
+        createdAt: comment.created_at,
+        created_at: comment.created_at,
         liked: commentLikes.some((like) => like.member_id === viewerMemberId),
         likeCount: commentLikes.length,
       };
@@ -918,6 +920,8 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
     photos,
     text: row.body_text,
     location: row.location_text || '',
+    createdAt: row.created_at,
+    created_at: row.created_at,
     liked: entryLikes.some((like) => like.member_id === viewerMemberId),
     likeCount: entryLikes.length,
     commentCount: comments.length,
@@ -927,12 +931,8 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
 
 function applyEntriesToWeeks(weeks, entries) {
   return weeks.map((week) => {
-    const weekEntries = entries
-      .filter((entry) => entry.weekId === week.id)
-      .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
-    const photos = entries
-      .filter((entry) => entry.weekId === week.id && entry.photos.length > 0)
-      .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`))
+    const weekEntries = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id));
+    const photos = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id && entry.photos.length > 0))
       .map((entry) => entry.photos[0])
       .slice(0, 4);
     const locations = [...new Set(weekEntries.map((entry) => (entry.location || '').trim()).filter(Boolean))].slice(0, 2);
@@ -945,8 +945,46 @@ function applyEntriesToWeeks(weeks, entries) {
   });
 }
 
+function getEntryDateTime(entry) {
+  const labelMatch = String(entry.dateLabel || '').match(/(\d{1,2})월\s*(\d{1,2})일/);
+  if (labelMatch) {
+    const weekYearMatch = String(entry.weekId || '').match(/week-(\d{4})-/);
+    const year = weekYearMatch ? Number(weekYearMatch[1]) : today.getFullYear();
+    return new Date(year, Number(labelMatch[1]) - 1, Number(labelMatch[2])).getTime();
+  }
+
+  const date = new Date(`${entry.date}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
 function sortEntriesByDate(entries) {
-  return entries.slice().sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`));
+  return entries.slice().sort((a, b) => {
+    const dateDiff = getEntryDateTime(b) - getEntryDateTime(a);
+    if (dateDiff !== 0) return dateDiff;
+
+    const aCreatedAt = new Date(a.createdAt || a.created_at || 0).getTime();
+    const bCreatedAt = new Date(b.createdAt || b.created_at || 0).getTime();
+    return bCreatedAt - aCreatedAt;
+  });
+}
+
+function sortEntriesByDateAscending(entries) {
+  return entries.slice().sort((a, b) => {
+    const dateDiff = getEntryDateTime(a) - getEntryDateTime(b);
+    if (dateDiff !== 0) return dateDiff;
+
+    const aCreatedAt = new Date(a.createdAt || a.created_at || 0).getTime();
+    const bCreatedAt = new Date(b.createdAt || b.created_at || 0).getTime();
+    return aCreatedAt - bCreatedAt;
+  });
+}
+
+function sortCommentsByCreatedAt(comments) {
+  return comments.slice().sort((a, b) => {
+    const aCreatedAt = new Date(a.createdAt || a.created_at || 0).getTime();
+    const bCreatedAt = new Date(b.createdAt || b.created_at || 0).getTime();
+    return bCreatedAt - aCreatedAt;
+  });
 }
 
 function groupBy(items, getKey) {
@@ -1833,7 +1871,7 @@ function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false
 }
 
 function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance }) {
-  const weekEntries = entries.filter((entry) => entry.weekId === selectedWeek.id);
+  const weekEntries = sortEntriesByDateAscending(entries.filter((entry) => entry.weekId === selectedWeek.id));
 
   return (
     <motion.section className="phone list-screen" {...screenMotionProps('list', transitionKind, active, screenPushDistance)}>
@@ -1874,7 +1912,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
 
 function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
-  const comments = entry?.comments || [];
+  const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
   async function submitReply(event) {
     event.preventDefault();
@@ -1898,10 +1936,22 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
           ))}
         </div>
       </div>
-      <form className="reply-composer" onSubmit={submitReply}>
+      <form className="reply-composer" onSubmit={submitReply} autoComplete="off">
         <div className="reply-field">
           <img src={getMemberAvatarSrc(currentNickname)} alt="" />
-          <input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="답글 달기..." aria-label="답글 달기" />
+          <input
+            type="text"
+            value={reply}
+            onChange={(event) => setReply(event.target.value)}
+            placeholder="답글 달기..."
+            aria-label="답글 달기"
+            inputMode="text"
+            enterKeyHint="send"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+          />
           <button className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'} type="submit" aria-label="답글 보내기">
             <img src={assets.send} alt="" />
           </button>
@@ -2286,7 +2336,7 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
   ] = await Promise.all([
     supabase.from('diary_images').select('id, entry_id, image_url, storage_path, sort_order').in('entry_id', entryIds),
     supabase.from('diary_entry_likes').select('entry_id, member_id').in('entry_id', entryIds),
-    supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds),
+    supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds).order('created_at', { ascending: false }),
   ]);
 
   if (imagesError) throw imagesError;
@@ -2336,6 +2386,8 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
             id: comment.id,
             nickname: membersById.get(comment.author_id) || getNicknameForMemberId(comment.author_id),
             text: comment.body_text,
+            createdAt: comment.created_at,
+            created_at: comment.created_at,
             liked: likes.some((like) => like.member_id === viewerMemberId),
             likeCount: likes.length,
           };
@@ -2351,6 +2403,8 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
         photos: entryImages,
         text: entry.body_text,
         location: entry.location_text || '',
+        createdAt: entry.created_at,
+        created_at: entry.created_at,
         liked: likes.some((like) => like.member_id === viewerMemberId),
         likeCount: likes.length,
         commentCount: entryComments.length,
@@ -2507,6 +2561,7 @@ async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
 }
 
 function buildLocalSavedEntry(entry, entryId, images) {
+  const createdAt = entry.createdAt || entry.created_at || new Date().toISOString();
   const localImages =
     images ||
     entry.photos.slice(0, maxUploadPhotos).map((photo, index) => ({
@@ -2519,6 +2574,8 @@ function buildLocalSavedEntry(entry, entryId, images) {
     ...entry,
     id: entryId,
     weekId: getWeekIdForDate(entry.date),
+    createdAt,
+    created_at: createdAt,
     photos: localImages.map((image, index) => ({
       id: image.id || `${entryId}-${index}`,
       src: image.image_url || image.src,
@@ -2536,7 +2593,7 @@ function addLocalCommentToEntries(entries, entryId, comment) {
       ? {
           ...entry,
           commentCount: (typeof entry.commentCount === 'number' ? entry.commentCount : (entry.comments || []).length) + 1,
-          comments: [comment, ...(entry.comments || [])],
+          comments: sortCommentsByCreatedAt([comment, ...(entry.comments || [])]),
         }
       : entry
   );
@@ -2599,6 +2656,7 @@ export default function App() {
   const screenRef = useRef(screen);
   const previousScreenRef = useRef(previousScreen);
   const shouldIgnoreNextPopState = useRef(false);
+  const homeEdgeBackSwipeBlocker = useRef({ active: false, startX: 0, startY: 0 });
   const consumedDeepLinkedEntryId = useRef('');
   const screenTransitionResetTimer = useRef(null);
   const screenTransitionRunId = useRef(0);
@@ -2668,6 +2726,59 @@ export default function App() {
     screenRef.current = screen;
     previousScreenRef.current = previousScreen;
   }, [screen, previousScreen]);
+
+  useEffect(() => {
+    const edgeWidth = 34;
+
+    function resetHomeEdgeBackSwipeBlocker() {
+      homeEdgeBackSwipeBlocker.current.active = false;
+    }
+
+    function handleHomeEdgeTouchStart(event) {
+      if (screenRef.current !== 'home' || event.touches.length !== 1) {
+        resetHomeEdgeBackSwipeBlocker();
+        return;
+      }
+
+      const touch = event.touches[0];
+      const isLeftEdgeTouch = touch.clientX <= edgeWidth;
+      homeEdgeBackSwipeBlocker.current = {
+        active: isLeftEdgeTouch,
+        startX: touch.clientX,
+        startY: touch.clientY,
+      };
+
+      if (isLeftEdgeTouch && event.cancelable) {
+        event.preventDefault();
+      }
+    }
+
+    function handleHomeEdgeTouchMove(event) {
+      const blocker = homeEdgeBackSwipeBlocker.current;
+      if (!blocker.active || screenRef.current !== 'home' || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - blocker.startX;
+      const deltaY = touch.clientY - blocker.startY;
+      const isBackSwipeMotion = deltaX >= 0 && Math.abs(deltaX) >= Math.abs(deltaY);
+
+      if (isBackSwipeMotion && event.cancelable) {
+        event.preventDefault();
+      }
+    }
+
+    window.addEventListener('touchstart', handleHomeEdgeTouchStart, { capture: true, passive: false });
+    window.addEventListener('touchmove', handleHomeEdgeTouchMove, { capture: true, passive: false });
+    window.addEventListener('touchend', resetHomeEdgeBackSwipeBlocker, true);
+    window.addEventListener('touchcancel', resetHomeEdgeBackSwipeBlocker, true);
+
+    return () => {
+      window.removeEventListener('touchstart', handleHomeEdgeTouchStart, true);
+      window.removeEventListener('touchmove', handleHomeEdgeTouchMove, true);
+      window.removeEventListener('touchend', resetHomeEdgeBackSwipeBlocker, true);
+      window.removeEventListener('touchcancel', resetHomeEdgeBackSwipeBlocker, true);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (screenTransitionResetTimer.current) window.clearTimeout(screenTransitionResetTimer.current);
@@ -2896,7 +3007,7 @@ export default function App() {
         location_text: entry.location,
         body_text: entry.text,
       })
-      .select('id, diary_date, location_text, body_text')
+      .select('id, diary_date, location_text, body_text, created_at')
       .single();
 
     if (entryError) throw entryError;
@@ -2912,6 +3023,8 @@ export default function App() {
         weekday: formatWeekday(savedRow?.diary_date || entry.date),
         location: savedRow?.location_text || '',
         text: savedRow?.body_text || entry.text,
+        createdAt: savedRow?.created_at,
+        created_at: savedRow?.created_at,
       },
       entryId,
       images
@@ -3031,7 +3144,8 @@ export default function App() {
 
   async function addComment(entryId, text) {
     const commentId = crypto.randomUUID();
-    const comment = { id: commentId, nickname: selectedMemberNickname, text, liked: false, likeCount: 0 };
+    const createdAt = new Date().toISOString();
+    const comment = { id: commentId, nickname: selectedMemberNickname, text, createdAt, created_at: createdAt, liked: false, likeCount: 0 };
 
     if (!hasSupabaseConfig) {
       setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
