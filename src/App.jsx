@@ -116,6 +116,14 @@ const defaultScreenPushDistance = 390;
 const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
 const uploadGridColumnCount = 3;
+const storageCacheControlSeconds = '31536000';
+const uploadPhotoMaxDimension = 1280;
+const uploadPhotoQuality = 0.72;
+const photoTransforms = {
+  polaroid: { width: 256, height: 256, resize: 'cover', quality: 60 },
+  list: { width: 512, height: 512, resize: 'cover', quality: 65 },
+  focus: { width: 960, height: 960, resize: 'cover', quality: 72 },
+};
 const uploadFieldSpring = {
   type: 'spring',
   stiffness: 480,
@@ -819,8 +827,7 @@ async function compressPhotoForUpload(file) {
     image.src = imageUrl;
     await image.decode();
 
-    const maxDimension = 1600;
-    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const scale = Math.min(1, uploadPhotoMaxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
     const canvas = document.createElement('canvas');
@@ -830,7 +837,7 @@ async function compressPhotoForUpload(file) {
     if (!context) return file;
 
     context.drawImage(image, 0, 0, width, height);
-    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    const blob = await canvasToBlob(canvas, 'image/jpeg', uploadPhotoQuality);
     if (!blob || blob.size >= file.size) return file;
 
     return new File([blob], replaceFileExtension(file.name, 'jpg'), {
@@ -1025,6 +1032,7 @@ function PhotoImage({ photo, transform, eager = false }) {
       alt=""
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
+      fetchPriority={eager ? 'high' : 'low'}
       onError={() => {
         if (src !== originalSrc) setSrc(originalSrc);
       }}
@@ -1046,7 +1054,7 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
     >
       <span className="polaroid-paper">
         <span className="polaroid-image">
-          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={{ width: 360, height: 360, resize: 'cover', quality: 70 }} eager={isLast} />}
+          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={photoTransforms.polaroid} eager={isLast} />}
         </span>
       </span>
       {!add && onRemove ? (
@@ -1831,7 +1839,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 : undefined
             }
           >
-            <PhotoImage photo={photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager={index === 0} />
+            <PhotoImage photo={photo} transform={photoTransforms.list} eager={index === 0} />
           </motion.span>
         ))}
         {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
@@ -1845,7 +1853,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               >
                 <div className="large-photo-focus-dim" />
                 <div className="large-photo-focused-image" onClick={(event) => event.stopPropagation()}>
-                  <PhotoImage photo={focusedPhoto.photo} transform={{ width: 1200, height: 1200, resize: 'cover', quality: 85 }} eager />
+                  <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
                 </div>
               </motion.div>,
               document.body,
@@ -2715,7 +2723,7 @@ async function uploadDiaryPhotos(entryId, photos) {
     const extension = uploadFile.name.split('.').pop() || 'jpg';
     const storagePath = `${coupleSpaceId}/${entryId}/${index}-${crypto.randomUUID()}.${extension}`;
     const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, uploadFile, {
-      cacheControl: '31536000',
+      cacheControl: storageCacheControlSeconds,
       upsert: false,
     });
 
