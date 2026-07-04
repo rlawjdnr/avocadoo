@@ -1688,7 +1688,7 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false }) {
   const [isStackPressed, setIsStackPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
@@ -1700,7 +1700,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const releaseStackPress = () => setIsStackPressed(false);
   const expanded = lockedExpanded || isExpanded;
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
-  const stackInteractionProps = focusEnabled
+  const stackInteractionProps = focusEnabled || !toggleEnabled
     ? {}
     : {
         onPointerDown: () => setIsStackPressed(true),
@@ -1838,7 +1838,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
             <PhotoImage photo={photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager={index === 0} />
           </motion.span>
         ))}
-        <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span>
+        {toggleEnabled ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
       </motion.div>
       <AnimatePresence>
         {focusEnabled && focusedPhoto && typeof document !== 'undefined'
