@@ -993,10 +993,6 @@ img {
   object-fit: cover;
 }
 
-.large-photo-focused-source {
-  opacity: 0;
-}
-
 .large-photo-focus-layer {
   position: fixed;
   inset: 0;
@@ -1013,8 +1009,29 @@ img {
 .large-photo-focused {
   position: fixed;
   z-index: 2;
+  display: block;
   margin: 0;
+  background: #ffffff;
+  box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
   pointer-events: auto;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.large-photo-focused-image {
+  position: absolute;
+  left: 6.061%;
+  top: 5.172%;
+  display: block;
+  width: 87.88%;
+  height: 70.689%;
+  overflow: hidden;
+}
+
+.large-photo-focused-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .large-photo-1 {

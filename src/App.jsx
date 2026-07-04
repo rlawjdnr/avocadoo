@@ -1764,7 +1764,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 delete photoRefs.current[index];
               }
             }}
-            className={`large-photo large-photo-${index + 1} ${focusEnabled && focusedPhoto?.index === index ? 'large-photo-focused-source' : ''}`}
+            className={`large-photo large-photo-${index + 1}`}
             key={`${photo.id || photo}-${index}`}
             initial={false}
             animate={
@@ -1856,7 +1856,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                   transition={largePolaroidFocusSpring}
                 />
                 <motion.span
-                  className="large-photo large-photo-focused"
+                  className="large-photo-focused"
                   style={{
                     left: focusedPhoto.rect.left,
                     top: focusedPhoto.rect.top,
@@ -1875,7 +1875,9 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                   }}
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
+                  <span className="large-photo-focused-image">
+                    <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
+                  </span>
                 </motion.span>
               </motion.div>,
               document.body,
