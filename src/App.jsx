@@ -1914,6 +1914,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
   const [reply, setReply] = useState('');
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
   const replyEditorRef = useRef(null);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
@@ -1923,7 +1924,11 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       const viewport = window.visualViewport;
       const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0;
       const visualHeight = viewport?.height || layoutHeight;
-      setIsKeyboardOpen(layoutHeight - visualHeight > 120);
+      const visualBottom = (viewport?.offsetTop || 0) + visualHeight;
+      const bottomOffset = Math.max(0, Math.round(layoutHeight - visualBottom));
+      const keyboardDelta = Math.max(bottomOffset, layoutHeight - visualHeight);
+      setKeyboardBottomOffset(bottomOffset);
+      setIsKeyboardOpen(keyboardDelta > 120);
     }
 
     updateKeyboardState();
@@ -1964,8 +1969,19 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
 
   if (!entry) return null;
 
+  const isReplyKeyboardDocked = isKeyboardOpen || isReplyFocused;
+  const commentScreenMotionProps = screenMotionProps('comment', transitionKind, active, screenPushDistance);
+  const commentScreenStyle = {
+    ...(commentScreenMotionProps.style || {}),
+    '--reply-keyboard-bottom': `${keyboardBottomOffset}px`,
+  };
+
   return (
-    <motion.section className="phone comments-screen" {...screenMotionProps('comment', transitionKind, active, screenPushDistance)}>
+    <motion.section
+      className={isReplyKeyboardDocked ? 'phone comments-screen comments-screen-keyboard-open' : 'phone comments-screen'}
+      {...commentScreenMotionProps}
+      style={commentScreenStyle}
+    >
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={() => onNavigate('list')} />
       <div className="comment-thread">
@@ -1976,7 +1992,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
           ))}
         </div>
       </div>
-      <form className={isKeyboardOpen || isReplyFocused ? 'reply-composer reply-composer-keyboard-open' : 'reply-composer'} onSubmit={submitReply} autoComplete="off">
+      <form className={isReplyKeyboardDocked ? 'reply-composer reply-composer-keyboard-open' : 'reply-composer'} onSubmit={submitReply} autoComplete="off">
         <div className="reply-field">
           <img src={getMemberAvatarSrc(currentNickname)} alt="" />
           <div

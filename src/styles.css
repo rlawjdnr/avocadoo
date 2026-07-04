@@ -1181,6 +1181,11 @@ img {
   padding-bottom: 124px;
 }
 
+.comments-screen-keyboard-open .comment-thread {
+  height: calc(100% - 59px - var(--reply-keyboard-bottom, 0px));
+  padding-bottom: 76px;
+}
+
 .comment-thread .diary-item {
   border-bottom: 0.5px solid rgba(42, 48, 56, 0.1);
 }
@@ -1286,6 +1291,7 @@ img {
 }
 
 .reply-composer {
+  --reply-keyboard-bottom: 0px;
   position: absolute;
   left: 0;
   bottom: 0;
@@ -1295,6 +1301,7 @@ img {
 }
 
 .reply-composer-keyboard-open {
+  bottom: var(--reply-keyboard-bottom, 0px);
   padding: 8px 12px 0;
 }
 
