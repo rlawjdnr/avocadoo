@@ -194,6 +194,8 @@ const screenPushShadowTransition = {
 };
 const splashMinimumDurationMs = 2000;
 const instagramLikeHapticMs = 10;
+const listFocusedEntryInset = 96;
+const listWeekAnchorOffset = 120;
 
 function triggerInstagramLikeHaptic() {
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
@@ -2020,7 +2022,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     const target = targetEntry ? entryRefs.current.get(targetEntry.id) : null;
     if (!list || !target) return;
 
-    list.scrollTo({ top: target.offsetTop, behavior: 'auto' });
+    list.scrollTo({ top: Math.max(0, target.offsetTop - listFocusedEntryInset), behavior: 'auto' });
     focusedWeekRef.current = selectedWeek.id;
   }, [active, monthEntries, selectedWeek.id]);
 
@@ -2032,7 +2034,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     const list = listRef.current;
     if (!list || monthEntries.length === 0) return;
 
-    const anchorTop = list.scrollTop + 24;
+    const anchorTop = list.scrollTop + listWeekAnchorOffset;
     let anchoredEntry = monthEntries[0];
 
     for (const entry of monthEntries) {
