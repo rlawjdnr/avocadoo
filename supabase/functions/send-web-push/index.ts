@@ -57,7 +57,7 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
 
   if (eventType === 'diary_created') {
     return {
-      title: '아보카드',
+      title: '아보카도',
       body: `${nickname}\n새로운 일기를 작성했어요.`,
       url: url.toString(),
     };
@@ -65,7 +65,7 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
 
   if (eventType === 'diary_liked') {
     return {
-      title: '아보카드',
+      title: '아보카도',
       body: `${nickname}\n좋아요를 남겼어요.`,
       url: url.toString(),
     };
