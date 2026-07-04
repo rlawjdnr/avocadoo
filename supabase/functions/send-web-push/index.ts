@@ -57,23 +57,23 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
 
   if (eventType === 'diary_created') {
     return {
-      title: `${nickname}님이 일기를 남겼어요.`,
-      body: '새 일기를 확인해보세요.',
+      title: '아보카드',
+      body: `${nickname}\n새로운 일기를 작성했어요.`,
       url: url.toString(),
     };
   }
 
   if (eventType === 'diary_liked') {
     return {
-      title: `${nickname}님이 좋아요를 남겼어요.`,
-      body: '내 일기에 새로운 반응이 있어요.',
+      title: '아보카드',
+      body: `${nickname}\n좋아요를 남겼어요.`,
       url: url.toString(),
     };
   }
 
   return {
-    title: `${nickname}님이 댓글을 달았어요.`,
-    body: '댓글 내용을 확인해보세요.',
+    title: '아보카도',
+    body: `${nickname}\n댓글을 달았어요.`,
     url: url.toString(),
   };
 }
