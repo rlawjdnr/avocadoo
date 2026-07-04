@@ -1000,14 +1000,19 @@ img {
 .large-photo-focus-layer {
   position: fixed;
   inset: 0;
-  z-index: 240;
+  z-index: 1000;
   pointer-events: auto;
-  background: transparent;
+}
+
+.large-photo-focus-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
 }
 
 .large-photo-focused {
   position: fixed;
-  z-index: 1;
+  z-index: 2;
   margin: 0;
   pointer-events: auto;
 }

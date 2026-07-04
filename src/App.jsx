@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
@@ -14,9 +15,9 @@ const assets = {
   plus: './assets/icon-plus.svg',
   down: './assets/icon-down.svg',
   avatar: './assets/icon-avatar.svg',
-  avatarHemin: './assets/icon-avatar-hemin.svg',
+  avatarHemin: './assets/profile-hemin.svg',
   avatarJeong: './assets/icon-avatar-jeong.svg',
-  avatarJeongNeutral: './assets/icon-avatar-jeong-neutral.svg',
+  avatarJeongNeutral: './assets/profile-jeong.svg',
   heart: './assets/icon-heart.svg',
   heartBadge: './assets/icon-heart-badge.svg',
   likeOutline: './assets/icon-like-outline.svg',
@@ -176,8 +177,8 @@ const largePolaroidSpring = {
 
 const largePolaroidFocusSpring = {
   type: 'spring',
-  stiffness: 200,
-  damping: 30,
+  stiffness: 480,
+  damping: 50,
 };
 
 const coveredPageTransition = {
@@ -1816,33 +1817,42 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
         <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span>
       </motion.div>
       <AnimatePresence>
-        {focusedPhoto ? (
-          <motion.div
-            className="large-photo-focus-layer"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            onClick={() => setFocusedPhoto(null)}
-          >
-            <motion.span
-              className="large-photo large-photo-focused"
-              style={{
-                left: focusedPhoto.rect.left,
-                top: focusedPhoto.rect.top,
-                width: focusedPhoto.rect.width,
-                height: focusedPhoto.rect.height,
-              }}
-              initial={{ x: 0, y: 0, scale: 1, rotate: 0 }}
-              animate={{ x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }}
-              exit={{ x: 0, y: 0, scale: 1, rotate: 0 }}
-              transition={largePolaroidFocusSpring}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
-            </motion.span>
-          </motion.div>
-        ) : null}
+        {focusedPhoto && typeof document !== 'undefined'
+          ? createPortal(
+              <motion.div
+                className="large-photo-focus-layer"
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 1 }}
+                onClick={() => setFocusedPhoto(null)}
+              >
+                <motion.div
+                  className="large-photo-focus-dim"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={largePolaroidFocusSpring}
+                />
+                <motion.span
+                  className="large-photo large-photo-focused"
+                  style={{
+                    left: focusedPhoto.rect.left,
+                    top: focusedPhoto.rect.top,
+                    width: focusedPhoto.rect.width,
+                    height: focusedPhoto.rect.height,
+                  }}
+                  initial={{ x: 0, y: 0, scale: 1, rotate: 0 }}
+                  animate={{ x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }}
+                  exit={{ x: 0, y: 0, scale: 1, rotate: 0 }}
+                  transition={largePolaroidFocusSpring}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
+                </motion.span>
+              </motion.div>,
+              document.body,
+            )
+          : null}
       </AnimatePresence>
     </div>
   );
