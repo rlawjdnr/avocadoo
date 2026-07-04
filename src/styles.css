@@ -1323,6 +1323,8 @@ img {
 }
 
 .reply-editor {
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   min-width: 0;
   height: 32px;
