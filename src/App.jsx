@@ -1688,7 +1688,7 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, onOpen }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, showDateLabel = false }) {
   const [isStackPressed, setIsStackPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
@@ -1700,25 +1700,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const releaseStackPress = () => setIsStackPressed(false);
   const expanded = lockedExpanded || isExpanded;
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
-  const stackInteractionProps = focusEnabled
+  const stackInteractionProps = focusEnabled || !toggleEnabled
     ? {}
-    : onOpen
-      ? {
-          role: 'button',
-          tabIndex: 0,
-          onPointerDown: () => setIsStackPressed(true),
-          onPointerUp: releaseStackPress,
-          onPointerCancel: releaseStackPress,
-          onPointerLeave: releaseStackPress,
-          onClick: onOpen,
-          onKeyDown: (event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            onOpen();
-          },
-        }
-      : !toggleEnabled
-        ? {}
     : {
         role: 'button',
         tabIndex: 0,
@@ -1765,7 +1748,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   return (
     <div className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''}`}>
       <motion.div
-        className={onOpen || toggleEnabled ? 'large-stack large-stack-clickable' : 'large-stack'}
+        className={toggleEnabled ? 'large-stack large-stack-clickable' : 'large-stack'}
         initial={false}
         animate={{ scale: isStackPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
         transition={{
@@ -1857,7 +1840,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
             <PhotoImage photo={photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager={index === 0} />
           </motion.span>
         ))}
-        {toggleEnabled ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
+        {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
       </motion.div>
       <AnimatePresence>
         {focusEnabled && focusedPhoto && typeof document !== 'undefined'
@@ -2013,7 +1996,7 @@ function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   return (
     <article className="diary-item diary-item-created diary-item-list-card">
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
-      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} onOpen={() => onOpenComments(normalizedEntry)} />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled />
       <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
     </article>
