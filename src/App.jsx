@@ -1912,6 +1912,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
 
 function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
+  const replyEditorRef = useRef(null);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
   async function submitReply(event) {
@@ -1920,6 +1921,22 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
     if (!trimmed) return;
     await onAddComment(entry.id, trimmed);
     setReply('');
+    if (replyEditorRef.current) replyEditorRef.current.textContent = '';
+  }
+
+  function handleReplyInput(event) {
+    setReply(event.currentTarget.textContent || '');
+  }
+
+  function handleReplyKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return;
+    event.preventDefault();
+    const form = event.currentTarget.closest('form');
+    if (typeof form?.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
   }
 
   if (!entry) return null;
@@ -1939,18 +1956,20 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       <form className="reply-composer" onSubmit={submitReply} autoComplete="off">
         <div className="reply-field">
           <img src={getMemberAvatarSrc(currentNickname)} alt="" />
-          <input
-            type="text"
-            value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            placeholder="답글 달기..."
+          <div
+            ref={replyEditorRef}
+            className="reply-editor"
+            role="textbox"
+            contentEditable="plaintext-only"
+            suppressContentEditableWarning
+            data-placeholder="답글 달기..."
             aria-label="답글 달기"
+            aria-multiline="false"
             inputMode="text"
             enterKeyHint="send"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="none"
             spellCheck={false}
+            onInput={handleReplyInput}
+            onKeyDown={handleReplyKeyDown}
           />
           <button className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'} type="submit" aria-label="답글 보내기">
             <img src={assets.send} alt="" />

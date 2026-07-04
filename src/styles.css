@@ -1178,7 +1178,7 @@ img {
 }
 
 .comments-screen .comment-thread {
-  padding-bottom: 124px;
+  padding-bottom: 76px;
 }
 
 .comment-thread .diary-item {
@@ -1291,7 +1291,7 @@ img {
   bottom: 0;
   z-index: 90;
   width: 100%;
-  padding: 10px 16px 32px;
+  padding: 8px 12px 0;
 }
 
 .reply-field {
@@ -1311,7 +1311,7 @@ img {
   flex: 0 0 auto;
 }
 
-.reply-field input {
+.reply-editor {
   flex: 1 1 auto;
   min-width: 0;
   height: 32px;
@@ -1322,11 +1322,17 @@ img {
   color: #2a3038;
   font-size: 15px;
   line-height: 22px;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-.reply-field input::placeholder {
+.reply-editor:empty::before {
+  content: attr(data-placeholder);
   color: #97999e;
   opacity: 1;
+  pointer-events: none;
 }
 
 .reply-send {
