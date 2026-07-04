@@ -1722,7 +1722,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       },
       targetX,
       targetY,
+      closing: false,
     });
+  }
+
+  function closeFocusedPhoto() {
+    setFocusedPhoto((current) => (current ? { ...current, closing: true } : current));
   }
 
   return (
@@ -1823,14 +1828,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 className="large-photo-focus-layer"
                 initial={{ opacity: 1 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 1 }}
-                onClick={() => setFocusedPhoto(null)}
+                onClick={closeFocusedPhoto}
               >
                 <motion.div
                   className="large-photo-focus-dim"
                   initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
+                  animate={{ opacity: focusedPhoto.closing ? 0 : 1 }}
                   transition={largePolaroidFocusSpring}
                 />
                 <motion.span
@@ -1842,9 +1845,15 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     height: focusedPhoto.rect.height,
                   }}
                   initial={{ x: 0, y: 0, scale: 1, rotate: 0 }}
-                  animate={{ x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }}
-                  exit={{ x: 0, y: 0, scale: 1, rotate: 0 }}
+                  animate={
+                    focusedPhoto.closing
+                      ? { x: 0, y: 0, scale: 1, rotate: 0 }
+                      : { x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }
+                  }
                   transition={largePolaroidFocusSpring}
+                  onAnimationComplete={() => {
+                    if (focusedPhoto.closing) setFocusedPhoto(null);
+                  }}
                   onClick={(event) => event.stopPropagation()}
                 >
                   <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
