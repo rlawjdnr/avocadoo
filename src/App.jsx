@@ -876,6 +876,10 @@ function getMonthStartForDate(value) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+function getMonthKeyForDate(value) {
+  return getMonthKey(getMonthStartForDate(value));
+}
+
 function getWeekForEntry(entry, entries) {
   const monthStart = getMonthStartForDate(entry.date);
   const monthWeeks = applyEntriesToWeeks(buildMonthWeeks(monthStart), entries);
@@ -1950,11 +1954,11 @@ function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = fals
   );
 }
 
-function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit }) {
+function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit, itemRef }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
 
   return (
-    <article className="diary-item diary-item-created diary-item-list-card">
+    <article className="diary-item diary-item-created diary-item-list-card" ref={itemRef}>
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
       <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled />
       <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
@@ -1976,21 +1980,104 @@ function DiaryDetailCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   );
 }
 
-function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false }) {
+function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false, itemRef }) {
   if (!entry) return null;
-  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} />;
+  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} />;
 }
 
 function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance }) {
-  const weekEntries = sortEntriesByDateAscending(entries.filter((entry) => entry.weekId === selectedWeek.id));
+  const listRef = useRef(null);
+  const entryRefs = useRef(new Map());
+  const focusedWeekRef = useRef('');
+  const scrollFrameRef = useRef(null);
+  const selectedMonthKey = getMonthKeyForDate(selectedWeek.startDate);
+  const monthEntries = useMemo(
+    () => sortEntriesByDateAscending(entries.filter((entry) => getMonthKeyForDate(entry.date) === selectedMonthKey)),
+    [entries, selectedMonthKey]
+  );
+  const monthWeeks = useMemo(
+    () => applyEntriesToWeeks(buildMonthWeeks(getMonthStartForDate(selectedWeek.startDate)), entries),
+    [entries, selectedWeek.startDate]
+  );
+  const weeksById = useMemo(() => new Map(monthWeeks.map((week) => [week.id, week])), [monthWeeks]);
+  const [visibleWeek, setVisibleWeek] = useState(() => weeksById.get(selectedWeek.id) || selectedWeek);
+  const headerWeek = visibleWeek || selectedWeek;
+
+  useEffect(() => {
+    setVisibleWeek(weeksById.get(selectedWeek.id) || selectedWeek);
+    focusedWeekRef.current = '';
+  }, [selectedWeek.id]);
+
+  useEffect(() => {
+    setVisibleWeek((current) => weeksById.get(current?.id) || current);
+  }, [weeksById]);
+
+  useLayoutEffect(() => {
+    if (!active || focusedWeekRef.current === selectedWeek.id) return;
+
+    const list = listRef.current;
+    const targetEntry = monthEntries.find((entry) => entry.weekId === selectedWeek.id);
+    const target = targetEntry ? entryRefs.current.get(targetEntry.id) : null;
+    if (!list || !target) return;
+
+    list.scrollTo({ top: target.offsetTop, behavior: 'auto' });
+    focusedWeekRef.current = selectedWeek.id;
+  }, [active, monthEntries, selectedWeek.id]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
+  function updateVisibleWeek() {
+    const list = listRef.current;
+    if (!list || monthEntries.length === 0) return;
+
+    const anchorTop = list.scrollTop + 24;
+    let anchoredEntry = monthEntries[0];
+
+    for (const entry of monthEntries) {
+      const element = entryRefs.current.get(entry.id);
+      if (!element) continue;
+      if (element.offsetTop <= anchorTop) {
+        anchoredEntry = entry;
+        continue;
+      }
+      break;
+    }
+
+    const nextWeek = weeksById.get(anchoredEntry.weekId) || getWeekForEntry(anchoredEntry, entries);
+    setVisibleWeek((current) => (current?.id === nextWeek.id && current?.label === nextWeek.label ? current : nextWeek));
+  }
+
+  function handleListScroll() {
+    if (scrollFrameRef.current !== null) return;
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      updateVisibleWeek();
+    });
+  }
 
   return (
     <motion.section className="phone list-screen" {...screenMotionProps('list', transitionKind, active, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
-      <NavHeader title={selectedWeek.range} sub={selectedWeek.label} onNavigate={onNavigate} />
-      <div className="diary-list">
-        {weekEntries.map((entry) => (
-          <DiaryItem key={entry.id} entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEditEntry} />
+      <NavHeader title={headerWeek.range} sub={headerWeek.label} onNavigate={onNavigate} />
+      <div className="diary-list" ref={listRef} onScroll={handleListScroll}>
+        {monthEntries.map((entry) => (
+          <DiaryItem
+            key={entry.id}
+            entry={entry}
+            onToggleLike={onToggleLike}
+            onOpenComments={onOpenComments}
+            onEdit={onEditEntry}
+            itemRef={(element) => {
+              if (element) {
+                entryRefs.current.set(entry.id, element);
+              } else {
+                entryRefs.current.delete(entry.id);
+              }
+            }}
+          />
         ))}
       </div>
       <UploadButton onNavigate={onNavigate} />
