@@ -761,7 +761,7 @@ function getMemberPairForNickname(nickname) {
 }
 
 function getMemberAvatarSrc(nickname) {
-  return normalizeSelectedNickname(nickname) === '혜민민' ? assets.avatarJeongNeutral : assets.avatarHemin;
+  return normalizeSelectedNickname(nickname) === '혜민민' ? assets.avatarHemin : assets.avatarJeongNeutral;
 }
 
 function readSelectedNickname() {
@@ -1211,8 +1211,8 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
         onPointerLeave={releaseCouplePress}
         onClick={onOpenNicknamePicker}
       >
-        <img className={normalizeSelectedNickname(currentNickname) === '정정욱' ? 'couple-avatar-selected' : ''} src={assets.avatarHemin} alt="" />
-        <img className={normalizeSelectedNickname(currentNickname) === '혜민민' ? 'couple-avatar-selected' : ''} src={assets.avatarJeongNeutral} alt="" />
+        <img className={normalizeSelectedNickname(currentNickname) === '정정욱' ? 'couple-avatar-selected' : ''} src={assets.avatarJeongNeutral} alt="" />
+        <img className={normalizeSelectedNickname(currentNickname) === '혜민민' ? 'couple-avatar-selected' : ''} src={assets.avatarHemin} alt="" />
         <span>
           <img src={assets.heartBadge} alt="" />
         </span>
