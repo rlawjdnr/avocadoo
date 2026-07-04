@@ -1715,39 +1715,11 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       };
 
   function focusPhoto(photo, index) {
-    const node = photoRefs.current[index];
-    if (!node) return;
-    const rect = node.getBoundingClientRect();
-    const viewport = window.visualViewport;
-    const viewportLeft = viewport?.offsetLeft || 0;
-    const viewportTop = viewport?.offsetTop || 0;
-    const viewportWidth = viewport?.width || window.innerWidth;
-    const viewportHeight = viewport?.height || window.innerHeight;
-    const targetX = viewportLeft + viewportWidth / 2 - (rect.left + rect.width / 2);
-    const targetY = viewportTop + viewportHeight / 2 - (rect.top + rect.height / 2);
-
-    setFocusedPhoto({
-      photo,
-      index,
-      rect: {
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-      },
-      targetX,
-      targetY,
-      open: false,
-      closing: false,
-    });
-
-    requestAnimationFrame(() => {
-      setFocusedPhoto((current) => (current?.index === index && !current.closing ? { ...current, open: true } : current));
-    });
+    setFocusedPhoto({ photo, index });
   }
 
   function closeFocusedPhoto() {
-    setFocusedPhoto((current) => (current ? { ...current, closing: true } : current));
+    setFocusedPhoto(null);
   }
 
   function openFocusedPhoto(event, photo, index) {
@@ -1863,40 +1835,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
           ? createPortal(
               <motion.div
                 className="large-photo-focus-layer"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: 1 }}
                 onClick={closeFocusedPhoto}
               >
-                <motion.div
-                  className="large-photo-focus-dim"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: focusedPhoto.closing ? 0 : 1 }}
-                  transition={largePolaroidFocusSpring}
-                />
-                <motion.span
-                  className="large-photo-focused"
-                  style={{
-                    left: focusedPhoto.rect.left,
-                    top: focusedPhoto.rect.top,
-                    width: focusedPhoto.rect.width,
-                    height: focusedPhoto.rect.height,
-                  }}
-                  initial={{ x: 0, y: 0, scale: 1, rotate: 0 }}
-                  animate={
-                    focusedPhoto.open && !focusedPhoto.closing
-                      ? { x: focusedPhoto.targetX, y: focusedPhoto.targetY, scale: 2, rotate: 0 }
-                      : { x: 0, y: 0, scale: 1, rotate: 0 }
-                  }
-                  transition={largePolaroidFocusSpring}
-                  onAnimationComplete={() => {
-                    if (focusedPhoto.closing) setFocusedPhoto(null);
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <span className="large-photo-focused-image">
-                    <PhotoImage photo={focusedPhoto.photo} transform={{ width: 640, height: 640, resize: 'cover', quality: 75 }} eager />
-                  </span>
-                </motion.span>
+                <div className="large-photo-focus-dim" />
+                <div className="large-photo-focused-image" onClick={(event) => event.stopPropagation()}>
+                  <PhotoImage photo={focusedPhoto.photo} transform={{ width: 1200, height: 1200, resize: 'cover', quality: 85 }} eager />
+                </div>
               </motion.div>,
               document.body,
             )
