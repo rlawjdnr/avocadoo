@@ -1178,7 +1178,7 @@ img {
 }
 
 .comments-screen .comment-thread {
-  padding-bottom: 76px;
+  padding-bottom: 124px;
 }
 
 .comment-thread .diary-item {
@@ -1291,6 +1291,10 @@ img {
   bottom: 0;
   z-index: 90;
   width: 100%;
+  padding: 10px 16px max(32px, env(safe-area-inset-bottom));
+}
+
+.reply-composer-keyboard-open {
   padding: 8px 12px 0;
 }
 

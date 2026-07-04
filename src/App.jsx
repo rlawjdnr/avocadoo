@@ -1912,8 +1912,31 @@ function CommentRow({ comment, onToggleCommentLike }) {
 
 function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
+  const [isReplyFocused, setIsReplyFocused] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const replyEditorRef = useRef(null);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
+
+  useEffect(() => {
+    function updateKeyboardState() {
+      if (typeof window === 'undefined') return;
+      const viewport = window.visualViewport;
+      const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const visualHeight = viewport?.height || layoutHeight;
+      setIsKeyboardOpen(layoutHeight - visualHeight > 120);
+    }
+
+    updateKeyboardState();
+    window.addEventListener('resize', updateKeyboardState);
+    window.visualViewport?.addEventListener('resize', updateKeyboardState);
+    window.visualViewport?.addEventListener('scroll', updateKeyboardState);
+
+    return () => {
+      window.removeEventListener('resize', updateKeyboardState);
+      window.visualViewport?.removeEventListener('resize', updateKeyboardState);
+      window.visualViewport?.removeEventListener('scroll', updateKeyboardState);
+    };
+  }, []);
 
   async function submitReply(event) {
     event.preventDefault();
@@ -1953,7 +1976,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
           ))}
         </div>
       </div>
-      <form className="reply-composer" onSubmit={submitReply} autoComplete="off">
+      <form className={isKeyboardOpen || isReplyFocused ? 'reply-composer reply-composer-keyboard-open' : 'reply-composer'} onSubmit={submitReply} autoComplete="off">
         <div className="reply-field">
           <img src={getMemberAvatarSrc(currentNickname)} alt="" />
           <div
@@ -1970,6 +1993,8 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
             spellCheck={false}
             onInput={handleReplyInput}
             onKeyDown={handleReplyKeyDown}
+            onFocus={() => setIsReplyFocused(true)}
+            onBlur={() => setIsReplyFocused(false)}
           />
           <button className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'} type="submit" aria-label="답글 보내기">
             <img src={assets.send} alt="" />
