@@ -365,15 +365,14 @@ function PushPrompt({ permission = 'default', isSupported = true, isConfigured =
 
 function PushStatus({ status = 'idle', permission = 'default', onRetry, isSaving = false }) {
   if (permission !== 'granted') return null;
+  if (status === 'saved') return null;
 
   const message =
     status === 'saving'
       ? '알림 연결 중'
       : status === 'error'
         ? '알림 연결이 아직 안 됐어요.'
-        : status === 'saved'
-          ? '알림 연결됨'
-          : '알림 권한은 켜졌고, 연결 확인이 필요해요.';
+        : '알림 권한은 켜졌고, 연결 확인이 필요해요.';
 
   return (
     <motion.section
