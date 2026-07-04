@@ -896,7 +896,7 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
     }));
   const comments = (row.diary_comments || [])
     .slice()
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     .map((comment) => {
       const commentLikes = comment.diary_comment_likes || [];
       return {
@@ -983,7 +983,7 @@ function sortCommentsByCreatedAt(comments) {
   return comments.slice().sort((a, b) => {
     const aCreatedAt = new Date(a.createdAt || a.created_at || 0).getTime();
     const bCreatedAt = new Date(b.createdAt || b.created_at || 0).getTime();
-    return bCreatedAt - aCreatedAt;
+    return aCreatedAt - bCreatedAt;
   });
 }
 
@@ -2336,7 +2336,7 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
   ] = await Promise.all([
     supabase.from('diary_images').select('id, entry_id, image_url, storage_path, sort_order').in('entry_id', entryIds),
     supabase.from('diary_entry_likes').select('entry_id, member_id').in('entry_id', entryIds),
-    supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds).order('created_at', { ascending: false }),
+    supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds).order('created_at', { ascending: true }),
   ]);
 
   if (imagesError) throw imagesError;
@@ -2379,7 +2379,7 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
       const likes = likesByEntry.get(entry.id) || [];
       const entryComments = (commentsByEntry.get(entry.id) || [])
         .slice()
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         .map((comment) => {
           const likes = likesByComment.get(comment.id) || [];
           return {
