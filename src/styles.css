@@ -974,6 +974,14 @@ img {
   height: 189.473px;
   background: #ffffff;
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
+  cursor: pointer;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.large-photo:focus-visible {
+  outline: 2px solid rgba(122, 204, 45, 0.7);
+  outline-offset: 4px;
 }
 
 .large-photo img {
@@ -983,6 +991,25 @@ img {
   width: 142.105px;
   height: 133.938px;
   object-fit: cover;
+}
+
+.large-photo-focused-source {
+  opacity: 0;
+}
+
+.large-photo-focus-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  pointer-events: auto;
+  background: transparent;
+}
+
+.large-photo-focused {
+  position: fixed;
+  z-index: 1;
+  margin: 0;
+  pointer-events: auto;
 }
 
 .large-photo-1 {
