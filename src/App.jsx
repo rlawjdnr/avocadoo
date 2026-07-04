@@ -1745,6 +1745,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     setFocusedPhoto((current) => (current ? { ...current, closing: true } : current));
   }
 
+  function openFocusedPhoto(event, photo, index) {
+    event.stopPropagation();
+    releasePhotoPress();
+    focusPhoto(photo, index);
+  }
+
   return (
     <div className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''}`}>
       <motion.div
@@ -1816,14 +1822,19 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                   }
                 : undefined
             }
-            onPointerUp={focusEnabled ? releasePhotoPress : undefined}
+            onPointerUp={
+              focusEnabled
+                ? (event) => {
+                    openFocusedPhoto(event, photo, index);
+                  }
+                : undefined
+            }
             onPointerCancel={focusEnabled ? releasePhotoPress : undefined}
             onPointerLeave={focusEnabled ? releasePhotoPress : undefined}
             onClick={
               focusEnabled
                 ? (event) => {
                     event.stopPropagation();
-                    focusPhoto(photo, index);
                   }
                 : undefined
             }
