@@ -902,11 +902,30 @@ function getDeepLinkedEntryId() {
   return new URLSearchParams(window.location.search).get('entry') || '';
 }
 
+function getDeepLinkedMonthKey() {
+  if (typeof window === 'undefined') return '';
+
+  return new URLSearchParams(window.location.search).get('month') || '';
+}
+
 function getMonthStartForDate(value) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return initialMonthStart;
 
   return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getMonthStartForMonthKey(value) {
+  if (!/^\d{4}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}-01T00:00:00`);
+  if (Number.isNaN(date.getTime()) || getMonthKey(date) !== value) return null;
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getInitialHomeMonth() {
+  const linkedMonth = getMonthStartForMonthKey(getDeepLinkedMonthKey());
+  if (!linkedMonth || isFutureMonth(linkedMonth)) return initialMonthStart;
+  return linkedMonth;
 }
 
 function getMonthKeyForDate(value) {
@@ -2127,7 +2146,7 @@ function Home({
       [activeMonthKey]: nextStickers,
     }));
     if (hasNewSticker) {
-      void notifyWebPush('sticker_created', {}, activeMemberId);
+      void notifyWebPush('sticker_created', { month: activeMonthKey }, activeMemberId);
     }
     dismissStickerPicker();
   }
@@ -3458,7 +3477,7 @@ export default function App() {
   const [screen, setScreen] = useState('home');
   const [previousScreen, setPreviousScreen] = useState(null);
   const [screenTransition, setScreenTransition] = useState('none');
-  const [homeMonth, setHomeMonth] = useState(initialMonthStart);
+  const [homeMonth, setHomeMonth] = useState(getInitialHomeMonth);
   const [selectedWeek, setSelectedWeek] = useState(initialWeeks[0]);
   const [entries, setEntries] = useState([]);
   const [stickersByMonth, setStickersByMonth] = useState(readLocalStickers);
@@ -3478,6 +3497,7 @@ export default function App() {
   const shouldIgnoreNextPopState = useRef(false);
   const homeEdgeBackSwipeBlocker = useRef({ active: false, startX: 0, startY: 0 });
   const consumedDeepLinkedEntryId = useRef('');
+  const consumedDeepLinkedMonthKey = useRef('');
   const screenTransitionResetTimer = useRef(null);
   const screenTransitionRunId = useRef(0);
   const screenPushDistance = useViewportWidth();
@@ -3627,6 +3647,18 @@ export default function App() {
     setSelectedWeek(getWeekForEntry(linkedEntry, entries));
     applyNavigation('comment', { pushHistory: false, animate: false });
   }, [entries, isInitialDataLoaded]);
+
+  useEffect(() => {
+    const monthKey = getDeepLinkedMonthKey();
+    if (!monthKey || getDeepLinkedEntryId() || consumedDeepLinkedMonthKey.current === monthKey) return;
+
+    const linkedMonth = getMonthStartForMonthKey(monthKey);
+    if (!linkedMonth || isFutureMonth(linkedMonth)) return;
+
+    consumedDeepLinkedMonthKey.current = monthKey;
+    setHomeMonth(linkedMonth);
+    applyNavigation('home', { pushHistory: false, animate: false });
+  }, []);
 
   useEffect(() => {
     replaceHomeHistoryState('guard');
