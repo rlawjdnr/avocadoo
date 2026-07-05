@@ -117,8 +117,9 @@ const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
 const uploadGridColumnCount = 3;
 const storageCacheControlSeconds = '31536000';
-const uploadPhotoMaxDimension = 1280;
-const uploadPhotoQuality = 0.72;
+const uploadPhotoMaxDimension = 960;
+const uploadPhotoQuality = 0.68;
+const useStorageImageTransforms = import.meta.env.VITE_SUPABASE_IMAGE_TRANSFORMS === 'true';
 const photoTransforms = {
   polaroid: { width: 256, height: 256, resize: 'cover', quality: 60 },
   list: { width: 512, height: 512, resize: 'cover', quality: 65 },
@@ -563,7 +564,7 @@ function getPhotoStoragePath(photo) {
 function getOptimizedPhotoSrc(photo, transform) {
   const originalSrc = getPhotoSrc(photo);
   const storagePath = getPhotoStoragePath(photo);
-  if (!hasSupabaseConfig || !supabase || !storagePath || !transform) return originalSrc;
+  if (!useStorageImageTransforms || !hasSupabaseConfig || !supabase || !storagePath || !transform) return originalSrc;
 
   const { data } = supabase.storage.from(storageBucket).getPublicUrl(storagePath, { transform });
   return data?.publicUrl || originalSrc;
