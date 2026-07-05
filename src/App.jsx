@@ -35,6 +35,9 @@ const assets = {
     heart: './assets/sticker-heart.svg?v=3',
     smiley: './assets/sticker-smiley.svg?v=3',
     burst: './assets/sticker-burst.svg?v=3',
+    light: './assets/sticker-light.svg?v=1',
+    balloon: './assets/sticker-balloon.svg?v=1',
+    flower: './assets/sticker-flower.svg?v=1',
   },
 };
 
@@ -210,6 +213,7 @@ const screenPushShadowTransition = {
 };
 const splashMinimumDurationMs = 2000;
 const instagramLikeHapticMs = 10;
+const stickerModeHapticMs = 8;
 const listFocusedEntryInset = 96;
 const listWeekAnchorOffset = 120;
 const stickerStorageKey = 'avocadoo.home.stickers.v1';
@@ -223,6 +227,9 @@ const stickerOptions = [
   { id: 'heart', label: '하트', src: assets.stickers.heart },
   { id: 'smiley', label: '스마일', src: assets.stickers.smiley },
   { id: 'burst', label: '반짝', src: assets.stickers.burst },
+  { id: 'light', label: '빛', src: assets.stickers.light },
+  { id: 'balloon', label: '풍선', src: assets.stickers.balloon },
+  { id: 'flower', label: '꽃', src: assets.stickers.flower },
 ];
 const defaultStickerPosition = {
   xRatio: 0.58,
@@ -234,6 +241,11 @@ const defaultStickerPosition = {
 function triggerInstagramLikeHaptic() {
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
   navigator.vibrate(instagramLikeHapticMs);
+}
+
+function triggerStickerModeHaptic() {
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+  navigator.vibrate(stickerModeHapticMs);
 }
 
 function getBackScreen(screen, previousScreen) {
@@ -2169,6 +2181,7 @@ function Home({
   }
 
   function openStickerPicker() {
+    triggerStickerModeHaptic();
     const currentStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
     const nextEditingStickers = currentStickers.length > 0 ? currentStickers : [createDefaultSticker('smiley', screenPushDistance)];
     setEditingStickers(nextEditingStickers);
