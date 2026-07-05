@@ -39,6 +39,8 @@ const assets = {
     balloon: './assets/sticker-balloon.svg?v=1',
     flower: './assets/sticker-flower.svg?v=1',
     cloud: './assets/sticker-cloud.svg?v=1',
+    characterHeart: './assets/sticker-character-heart.svg?v=1',
+    characterCouple: './assets/sticker-character-couple.svg?v=1',
   },
 };
 
@@ -232,6 +234,8 @@ const stickerOptions = [
   { id: 'balloon', label: '풍선', src: assets.stickers.balloon },
   { id: 'flower', label: '꽃', src: assets.stickers.flower },
   { id: 'cloud', label: '구름', src: assets.stickers.cloud },
+  { id: 'characterHeart', label: '하트커플', src: assets.stickers.characterHeart },
+  { id: 'characterCouple', label: '커플', src: assets.stickers.characterCouple },
 ];
 const defaultStickerPosition = {
   xRatio: 0.58,

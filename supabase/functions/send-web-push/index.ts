@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type PushEventType = 'diary_created' | 'diary_liked' | 'comment_created' | 'sticker_created';
+type PushEventType = 'diary_created' | 'diary_liked' | 'comment_created' | 'sticker_created' | 'sticker_released';
 
 type PushRequest = {
   eventType?: PushEventType;
@@ -83,6 +83,14 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
     };
   }
 
+  if (eventType === 'sticker_released') {
+    return {
+      title: nickname,
+      body: '새로운 스티커가 출시됐어요.',
+      url: url.toString(),
+    };
+  }
+
   return {
     title: nickname,
     body: '댓글을 달았어요.',
@@ -123,11 +131,11 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'eventType and actorMemberId are required' }, 400);
   }
 
-  if (!['diary_created', 'diary_liked', 'comment_created', 'sticker_created'].includes(eventType)) {
+  if (!['diary_created', 'diary_liked', 'comment_created', 'sticker_created', 'sticker_released'].includes(eventType)) {
     return jsonResponse({ error: 'Unsupported eventType' }, 400);
   }
 
-  if (eventType !== 'sticker_created' && !entryId) {
+  if (eventType !== 'sticker_created' && eventType !== 'sticker_released' && !entryId) {
     return jsonResponse({ error: 'entryId is required for diary notifications' }, 400);
   }
 
@@ -141,20 +149,28 @@ Deno.serve(async (request) => {
     .eq('id', actorMemberId)
     .single();
 
-  const { data: entryData, error: entryError } = eventType === 'sticker_created'
+  const { data: entryData, error: entryError } = eventType === 'sticker_created' || eventType === 'sticker_released'
     ? { data: null, error: null }
     : await supabase.from('diary_entries').select('id, author_id, space_id').eq('id', entryId).single();
 
   const actor = actorData as MemberRow | null;
   const entry = entryData as EntryRow | null;
 
-  if (actorError || !actor || (eventType !== 'sticker_created' && (entryError || !entry))) {
+  if (actorError || !actor || (eventType !== 'sticker_created' && eventType !== 'sticker_released' && (entryError || !entry))) {
     return jsonResponse({ error: 'Actor or diary entry not found' }, 404);
   }
 
   let targetMemberIds: string[] = [];
 
-  if (eventType === 'diary_created' || eventType === 'sticker_created') {
+  if (eventType === 'sticker_released') {
+    const { data: members, error: membersError } = await supabase
+      .from('couple_members')
+      .select('id')
+      .eq('space_id', actor.space_id);
+
+    if (membersError) return jsonResponse({ error: membersError.message }, 500);
+    targetMemberIds = (members || []).map((member) => member.id);
+  } else if (eventType === 'diary_created' || eventType === 'sticker_created') {
     const { data: members, error: membersError } = await supabase
       .from('couple_members')
       .select('id')
