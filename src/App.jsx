@@ -214,6 +214,7 @@ const listFocusedEntryInset = 96;
 const listWeekAnchorOffset = 120;
 const stickerStorageKey = 'avocadoo.home.stickers.v1';
 const stickerBaseSize = 100;
+const homeWeekListTop = 63;
 const stickerScaleLimit = {
   min: 0.18,
   max: 2.4,
@@ -940,8 +941,20 @@ function normalizeSticker(sticker, fallbackId = '') {
     type: option.id,
     x: Number.isFinite(sticker?.x) ? sticker.x : 226,
     y: Number.isFinite(sticker?.y) ? sticker.y : defaultStickerPosition.y,
+    coordinateSpace: sticker?.coordinateSpace === 'month-content' ? 'month-content' : 'viewport',
     scale: Number.isFinite(sticker?.scale) ? Math.min(Math.max(sticker.scale, stickerScaleLimit.min), stickerScaleLimit.max) : defaultStickerPosition.scale,
     rotation: Number.isFinite(sticker?.rotation) ? sticker.rotation : defaultStickerPosition.rotation,
+  };
+}
+
+function toMonthContentSticker(sticker) {
+  const normalizedSticker = normalizeSticker(sticker);
+  if (normalizedSticker.coordinateSpace === 'month-content') return normalizedSticker;
+
+  return {
+    ...normalizedSticker,
+    y: normalizedSticker.y - homeWeekListTop,
+    coordinateSpace: 'month-content',
   };
 }
 
@@ -951,6 +964,7 @@ function isSameSticker(a, b) {
     a.type === b.type &&
     a.x === b.x &&
     a.y === b.y &&
+    a.coordinateSpace === b.coordinateSpace &&
     a.scale === b.scale &&
     a.rotation === b.rotation
   );
@@ -961,7 +975,8 @@ function createDefaultSticker(type = 'smiley', viewportWidth = defaultScreenPush
     id: crypto.randomUUID(),
     type,
     x: Math.max(28, Math.min(viewportWidth - stickerBaseSize - 28, Math.round(viewportWidth * defaultStickerPosition.xRatio))),
-    y: defaultStickerPosition.y,
+    y: defaultStickerPosition.y - homeWeekListTop,
+    coordinateSpace: 'month-content',
     scale: defaultStickerPosition.scale,
     rotation: defaultStickerPosition.rotation,
   });
@@ -1407,7 +1422,6 @@ function HomeStickerLayer({
   editStickers = [],
   selectedStickerId = '',
   editing = false,
-  scrollTop = 0,
   bounceKey = 0,
   bounceStickerIds = [],
   onStickerChange,
@@ -1526,7 +1540,7 @@ function HomeStickerLayer({
       {visibleStickers.map((sticker) => (
         <HomeSticker
           key={sticker.id}
-          sticker={{ ...sticker, y: sticker.y - scrollTop }}
+          sticker={toMonthContentSticker(sticker)}
           editable={editing}
           selected={editing && selectedStickerId === sticker.id}
           bounceKey={bounceKey}
@@ -1549,7 +1563,6 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
     editStickers = [],
     selectedStickerId = '',
     editingStickers = false,
-    scrollTop = 0,
     stickerBounceKey = 0,
     stickerBounceIds = [],
     onScrollChange,
@@ -1570,8 +1583,20 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
           <div
             ref={weekListRef}
             className="week-list"
+            data-month-key={monthKey}
             onScroll={(event) => onScrollChange?.(monthKey, event.currentTarget.scrollTop)}
           >
+            <HomeStickerLayer
+              stickers={stickers}
+              editStickers={editStickers}
+              selectedStickerId={selectedStickerId}
+              editing={editingStickers}
+              bounceKey={stickerBounceKey}
+              bounceStickerIds={stickerBounceIds}
+              onStickerChange={onStickerChange}
+              onStickerRemove={onStickerRemove}
+              onStickerSelect={onStickerSelect}
+            />
             {weeks.map((week) => {
               const hasDiary = week.photos.length > 0;
               const content = (
@@ -1607,18 +1632,6 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
               );
             })}
           </div>
-          <HomeStickerLayer
-            stickers={stickers}
-            editStickers={editStickers}
-            selectedStickerId={selectedStickerId}
-            editing={editingStickers}
-            scrollTop={scrollTop}
-            bounceKey={stickerBounceKey}
-            bounceStickerIds={stickerBounceIds}
-            onStickerChange={onStickerChange}
-            onStickerRemove={onStickerRemove}
-            onStickerSelect={onStickerSelect}
-          />
         </>
       ) : null}
     </div>
@@ -2145,8 +2158,18 @@ function Home({
     });
   }
 
+  function getActiveWeekListMetrics() {
+    const weekList = monthViewportRef.current?.querySelector(`.week-list[data-month-key="${activeMonthKey}"]`);
+    if (!weekList) return null;
+
+    return {
+      rect: weekList.getBoundingClientRect(),
+      scrollTop: weekList.scrollTop || 0,
+    };
+  }
+
   function openStickerPicker() {
-    const currentStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => normalizeSticker(sticker));
+    const currentStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
     const nextEditingStickers = currentStickers.length > 0 ? currentStickers : [createDefaultSticker('smiley', screenPushDistance)];
     setEditingStickers(nextEditingStickers);
     setSelectedStickerId(nextEditingStickers[0]?.id || '');
@@ -2157,10 +2180,12 @@ function Home({
     setEditingStickers((current) => {
       const nextSticker = createDefaultSticker(type, screenPushDistance);
       const offset = Math.min(current.length, 5) * 12;
+      const scrollTop = getActiveWeekListMetrics()?.scrollTop ?? activeMonthScrollTop;
       const placedSticker = normalizeSticker({
         ...nextSticker,
         x: nextSticker.x + offset,
-        y: nextSticker.y + activeMonthScrollTop + offset,
+        y: nextSticker.y + scrollTop + offset,
+        coordinateSpace: 'month-content',
       });
       setSelectedStickerId(placedSticker.id);
       return [...current, placedSticker];
@@ -2169,14 +2194,16 @@ function Home({
 
   function dropEditingSticker(type, point) {
     const viewport = monthViewportRef.current;
-    if (!viewport) return;
+    const weekListMetrics = getActiveWeekListMetrics();
+    if (!viewport || !weekListMetrics) return;
 
     const viewportRect = viewport.getBoundingClientRect();
+    const { rect: weekListRect, scrollTop } = weekListMetrics;
     if (
       point.x < viewportRect.left ||
       point.x > viewportRect.right ||
-      point.y < viewportRect.top ||
-      point.y > viewportRect.bottom
+      point.y < weekListRect.top ||
+      point.y > weekListRect.bottom
     ) {
       return;
     }
@@ -2190,7 +2217,8 @@ function Home({
         id: crypto.randomUUID(),
         type,
         x: Math.min(Math.max(point.x - viewportRect.left - stickerBaseSize / 2, 8), viewportRect.width - stickerBaseSize - 8),
-        y: activeMonthScrollTop + Math.min(Math.max(point.y - viewportRect.top - stickerBaseSize / 2, 8), viewportRect.height - stickerBaseSize - 8),
+        y: scrollTop + Math.min(Math.max(point.y - weekListRect.top - stickerBaseSize / 2, 8), weekListRect.height - stickerBaseSize - 8),
+        coordinateSpace: 'month-content',
         scale: defaultStickerPosition.scale,
         rotation: defaultStickerPosition.rotation,
       });
@@ -2200,7 +2228,7 @@ function Home({
   }
 
   function changeEditingSticker(nextSticker) {
-    setEditingStickers((current) => current.map((sticker) => (sticker.id === nextSticker.id ? normalizeSticker(nextSticker) : sticker)));
+    setEditingStickers((current) => current.map((sticker) => (sticker.id === nextSticker.id ? toMonthContentSticker(nextSticker) : sticker)));
   }
 
   function removeEditingSticker(stickerId) {
@@ -2218,9 +2246,9 @@ function Home({
   }
 
   function applySticker() {
-    const previousStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => normalizeSticker(sticker));
+    const previousStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
     const previousStickersById = new Map(previousStickers.map((sticker) => [sticker.id, sticker]));
-    const nextStickers = editingStickers.map((sticker) => normalizeSticker(sticker));
+    const nextStickers = editingStickers.map((sticker) => toMonthContentSticker(sticker));
     const changedStickerIds = nextStickers
       .filter((sticker) => !isSameSticker(previousStickersById.get(sticker.id), sticker))
       .map((sticker) => sticker.id);
@@ -2286,7 +2314,6 @@ function Home({
               editStickers={index === activeMonthIndex ? editingStickers : []}
               selectedStickerId={index === activeMonthIndex ? selectedStickerId : ''}
               editingStickers={index === activeMonthIndex && isStickerPickerOpen}
-              scrollTop={monthScrollTops[month.key] || 0}
               stickerBounceKey={index === activeMonthIndex ? stickerBounce.key : 0}
               stickerBounceIds={index === activeMonthIndex ? stickerBounce.ids : []}
               onScrollChange={handleMonthScrollChange}
