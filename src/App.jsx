@@ -39,8 +39,8 @@ const assets = {
     balloon: './assets/sticker-balloon.svg?v=1',
     flower: './assets/sticker-flower.svg?v=1',
     cloud: './assets/sticker-cloud.svg?v=1',
-    characterHeart: './assets/sticker-character-heart.svg?v=1',
-    characterCouple: './assets/sticker-character-couple.svg?v=1',
+    characterHeart: './assets/sticker-character-heart.png?v=1',
+    characterCouple: './assets/sticker-character-couple.png?v=1',
   },
 };
 
