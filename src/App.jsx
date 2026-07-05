@@ -38,6 +38,7 @@ const assets = {
     light: './assets/sticker-light.svg?v=1',
     balloon: './assets/sticker-balloon.svg?v=1',
     flower: './assets/sticker-flower.svg?v=1',
+    cloud: './assets/sticker-cloud.svg?v=1',
   },
 };
 
@@ -230,6 +231,7 @@ const stickerOptions = [
   { id: 'light', label: '빛', src: assets.stickers.light },
   { id: 'balloon', label: '풍선', src: assets.stickers.balloon },
   { id: 'flower', label: '꽃', src: assets.stickers.flower },
+  { id: 'cloud', label: '구름', src: assets.stickers.cloud },
 ];
 const defaultStickerPosition = {
   xRatio: 0.58,
@@ -1850,6 +1852,9 @@ function Home({
   const pendingMonthTrackX = useRef(null);
   const longPressGesture = useRef(null);
   const stickerScreenGesture = useRef(null);
+  const homeSectionRef = useRef(null);
+  const isStickerPickerOpenRef = useRef(false);
+  const seededDefaultStickerId = useRef('');
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
@@ -1873,6 +1878,38 @@ function Home({
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
+
+  useEffect(() => {
+    isStickerPickerOpenRef.current = isStickerPickerOpen;
+    if (!isStickerPickerOpen) return;
+
+    monthGesture.current = null;
+    dragBlockedClick.current = false;
+    cancelScheduledMonthTrackPosition();
+    stopMonthAnimation();
+    resetMonthTrack(monthViewportRef.current);
+  }, [isStickerPickerOpen]);
+
+  useEffect(() => {
+    if (!isStickerPickerOpen) return;
+
+    const sourceStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
+    if (sourceStickers.length === 0) return;
+
+    setEditingStickers((current) => {
+      const currentWithoutSeed = seededDefaultStickerId.current
+        ? current.filter((sticker) => sticker.id !== seededDefaultStickerId.current)
+        : current;
+      const currentIds = new Set(currentWithoutSeed.map((sticker) => sticker.id));
+      const missingSourceStickers = sourceStickers.filter((sticker) => !currentIds.has(sticker.id));
+      if (missingSourceStickers.length === 0 && currentWithoutSeed.length === current.length) return current;
+
+      seededDefaultStickerId.current = '';
+      const nextStickers = [...missingSourceStickers, ...currentWithoutSeed];
+      if (!selectedStickerId) setSelectedStickerId(nextStickers[0]?.id || '');
+      return nextStickers;
+    });
+  }, [activeMonthKey, isStickerPickerOpen, stickersByMonth]);
 
   function getMonthPageWidth(viewport) {
     return viewport?.clientWidth || screenPushDistance;
@@ -1919,7 +1956,7 @@ function Home({
   }
 
   function canStartHomeLongPress(event) {
-    if (isStickerPickerOpen) return false;
+    if (isStickerPickerOpenRef.current) return false;
     if (event.pointerType === 'mouse' && event.button !== 0) return false;
     return !event.target.closest?.('input, textarea, select, .sticker-picker-sheet, .home-sticker-editable');
   }
@@ -2016,6 +2053,7 @@ function Home({
   }
 
   function startMonthGesture(pointerId, x, y, source = 'pointer') {
+    if (isStickerPickerOpenRef.current) return;
     const viewport = monthViewportRef.current;
     if (!viewport) return;
 
@@ -2032,6 +2070,7 @@ function Home({
   }
 
   function updateMonthGesture(pointerId, x, y, event) {
+    if (isStickerPickerOpenRef.current) return false;
     const viewport = monthViewportRef.current;
     const gesture = monthGesture.current;
     if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
@@ -2058,6 +2097,11 @@ function Home({
   }
 
   function finishMonthGesture(pointerId, x, y, cancelled = false) {
+    if (isStickerPickerOpenRef.current) {
+      monthGesture.current = null;
+      dragBlockedClick.current = false;
+      return false;
+    }
     const viewport = monthViewportRef.current;
     const gesture = monthGesture.current;
     if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
@@ -2119,6 +2163,7 @@ function Home({
   }, [monthDate, monthPages]);
 
   function handleMonthPointerDown(event) {
+    if (isStickerPickerOpenRef.current) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
     const viewport = monthViewportRef.current;
@@ -2133,11 +2178,18 @@ function Home({
   }
 
   function handleMonthPointerMove(event) {
+    if (isStickerPickerOpenRef.current) return;
     updateHomeLongPress(event);
     updateMonthGesture(event.pointerId, event.clientX, event.clientY, event);
   }
 
   function finishMonthPointer(event, cancelled = false) {
+    if (isStickerPickerOpenRef.current) {
+      monthGesture.current = null;
+      dragBlockedClick.current = false;
+      clearHomeLongPress();
+      return;
+    }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId) && event.currentTarget.releasePointerCapture) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -2161,7 +2213,7 @@ function Home({
   }
 
   function blockHomeTouchWhilePicking(event) {
-    if (!isStickerPickerOpen) return;
+    if (!isStickerPickerOpenRef.current) return;
     if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable')) return;
     event.stopPropagation();
   }
@@ -2197,11 +2249,17 @@ function Home({
   }
 
   function startStickerScreenGesture(event) {
-    if (!isStickerPickerOpen) return;
-    if (event.target.closest?.('.sticker-picker-sheet, button')) return;
+    if (!isStickerPickerOpenRef.current) return;
+    if (event.target.closest?.('button')) return;
 
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
-    if (event.touches.length < 2 && !touchedStickerId) return;
+    const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
+    if (event.touches.length < 2) {
+      if (touchedStickerId && touchedStickerId !== selectedStickerId) {
+        setSelectedStickerId(touchedStickerId);
+      }
+      return;
+    }
 
     const selectedSticker = editingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || selectedStickerId)) || editingStickers[0];
     if (!selectedSticker) return;
@@ -2215,11 +2273,12 @@ function Home({
     stickerScreenGesture.current = {
       ...createStickerScreenGesture(getStickerTouchPoints(event.touches), selectedSticker),
       startedOnSticker: Boolean(touchedStickerId),
+      startedOnSheet: isSheetTouch,
     };
   }
 
   function updateStickerScreenGesture(event) {
-    if (!isStickerPickerOpen || !stickerScreenGesture.current) return;
+    if (!isStickerPickerOpenRef.current || !stickerScreenGesture.current) return;
     if (event.touches.length < 2 && !stickerScreenGesture.current.startedOnSticker) return;
 
     event.stopPropagation();
@@ -2246,7 +2305,7 @@ function Home({
   }
 
   function finishStickerScreenGesture(event) {
-    if (!isStickerPickerOpen || !stickerScreenGesture.current) return;
+    if (!isStickerPickerOpenRef.current || !stickerScreenGesture.current) return;
 
     event.stopPropagation();
     if (event.touches.length < 2) {
@@ -2258,6 +2317,20 @@ function Home({
     const latestSticker = editingStickers.find((sticker) => sticker.id === stickerScreenGesture.current?.sticker.id) || stickerScreenGesture.current?.sticker;
     if (latestSticker) stickerScreenGesture.current = createStickerScreenGesture(points, latestSticker);
   }
+
+  useEffect(() => {
+    document.addEventListener('touchstart', startStickerScreenGesture, { capture: true, passive: false });
+    document.addEventListener('touchmove', updateStickerScreenGesture, { capture: true, passive: false });
+    document.addEventListener('touchend', finishStickerScreenGesture, { capture: true, passive: false });
+    document.addEventListener('touchcancel', finishStickerScreenGesture, { capture: true, passive: false });
+
+    return () => {
+      document.removeEventListener('touchstart', startStickerScreenGesture, true);
+      document.removeEventListener('touchmove', updateStickerScreenGesture, true);
+      document.removeEventListener('touchend', finishStickerScreenGesture, true);
+      document.removeEventListener('touchcancel', finishStickerScreenGesture, true);
+    };
+  }, [isStickerPickerOpen, editingStickers, selectedStickerId]);
 
   function handleMonthScrollChange(monthKey, scrollTop) {
     if (!monthKey) return;
@@ -2284,12 +2357,14 @@ function Home({
     triggerStickerModeHaptic();
     const currentStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
     const nextEditingStickers = currentStickers.length > 0 ? currentStickers : [createDefaultSticker('smiley', screenPushDistance)];
+    seededDefaultStickerId.current = currentStickers.length > 0 ? '' : nextEditingStickers[0]?.id || '';
     setEditingStickers(nextEditingStickers);
     setSelectedStickerId(nextEditingStickers[0]?.id || '');
     setIsStickerPickerOpen(true);
   }
 
   function addEditingSticker(type) {
+    seededDefaultStickerId.current = '';
     setEditingStickers((current) => {
       const nextSticker = createDefaultSticker(type, screenPushDistance);
       const offset = Math.min(current.length, 5) * 12;
@@ -2306,6 +2381,7 @@ function Home({
   }
 
   function dropEditingSticker(type, point) {
+    seededDefaultStickerId.current = '';
     const viewport = monthViewportRef.current;
     const weekListMetrics = getActiveWeekListMetrics();
     if (!viewport || !weekListMetrics) return;
@@ -2341,10 +2417,12 @@ function Home({
   }
 
   function changeEditingSticker(nextSticker) {
+    if (nextSticker.id === seededDefaultStickerId.current) seededDefaultStickerId.current = '';
     setEditingStickers((current) => current.map((sticker) => (sticker.id === nextSticker.id ? toMonthContentSticker(nextSticker) : sticker)));
   }
 
   function removeEditingSticker(stickerId) {
+    if (stickerId === seededDefaultStickerId.current) seededDefaultStickerId.current = '';
     setEditingStickers((current) => {
       const nextStickers = current.filter((sticker) => sticker.id !== stickerId);
       if (selectedStickerId === stickerId) setSelectedStickerId(nextStickers[0]?.id || '');
@@ -2354,6 +2432,7 @@ function Home({
 
   function dismissStickerPicker() {
     resetStickerScreenGesture();
+    seededDefaultStickerId.current = '';
     setIsStickerPickerOpen(false);
     setEditingStickers([]);
     setSelectedStickerId('');
@@ -2391,13 +2470,10 @@ function Home({
 
   return (
     <motion.section
+      ref={homeSectionRef}
       className="phone home-screen"
       onPointerDownCapture={blockHomeTouchWhilePicking}
       onClickCapture={blockHomeTouchWhilePicking}
-      onTouchStartCapture={startStickerScreenGesture}
-      onTouchMoveCapture={updateStickerScreenGesture}
-      onTouchEndCapture={finishStickerScreenGesture}
-      onTouchCancelCapture={finishStickerScreenGesture}
       {...homeMotionProps}
       style={homeMotionStyle}
     >
