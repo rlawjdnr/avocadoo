@@ -498,8 +498,16 @@ img {
 .home-sticker-layer {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 7;
   pointer-events: none;
+}
+
+.home-sticker-gesture-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .home-sticker-layer-editing {
@@ -547,6 +555,7 @@ img {
   backdrop-filter: blur(10.75px);
   -webkit-backdrop-filter: blur(10.75px);
   pointer-events: auto;
+  transform-origin: center;
 }
 
 .home-sticker-remove img {

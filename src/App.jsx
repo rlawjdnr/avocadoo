@@ -1416,6 +1416,9 @@ function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 
           className="home-sticker-remove"
           type="button"
           aria-label="스티커 삭제"
+          style={{
+            transform: `scale(${1 / Math.max(sticker.scale || 1, 0.01)})`,
+          }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -1843,6 +1846,8 @@ function Home({
   const monthTrackFrame = useRef(null);
   const pendingMonthTrackX = useRef(null);
   const longPressGesture = useRef(null);
+  const stickerScreenPointers = useRef(new Map());
+  const stickerScreenGesture = useRef(null);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
@@ -2155,8 +2160,92 @@ function Home({
 
   function blockHomeTouchWhilePicking(event) {
     if (!isStickerPickerOpen) return;
-    if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable')) return;
+    if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable, .home-sticker-gesture-layer')) return;
     event.stopPropagation();
+  }
+
+  function getGestureCenter(points) {
+    const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    return { x: total.x / points.length, y: total.y / points.length };
+  }
+
+  function getGestureDistance(a, b) {
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  }
+
+  function getGestureAngle(a, b) {
+    return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+  }
+
+  function createStickerScreenGesture(points, sticker) {
+    return {
+      center: getGestureCenter(points),
+      sticker,
+      distance: points.length >= 2 ? getGestureDistance(points[0], points[1]) : 1,
+      angle: points.length >= 2 ? getGestureAngle(points[0], points[1]) : 0,
+    };
+  }
+
+  function resetStickerScreenGesture() {
+    stickerScreenPointers.current.clear();
+    stickerScreenGesture.current = null;
+  }
+
+  function startStickerScreenGesture(event) {
+    if (!isStickerPickerOpen) return;
+    if (event.target.closest?.('.sticker-picker-sheet, button')) return;
+
+    const selectedSticker = editingStickers.find((sticker) => sticker.id === selectedStickerId) || editingStickers[0];
+    if (!selectedSticker) return;
+
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    stickerScreenPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    stickerScreenGesture.current = createStickerScreenGesture([...stickerScreenPointers.current.values()], selectedSticker);
+  }
+
+  function updateStickerScreenGesture(event) {
+    if (!isStickerPickerOpen || !stickerScreenPointers.current.has(event.pointerId) || !stickerScreenGesture.current) return;
+
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+    stickerScreenPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = [...stickerScreenPointers.current.values()];
+    const center = getGestureCenter(points);
+    const nextSticker = {
+      ...stickerScreenGesture.current.sticker,
+      x: stickerScreenGesture.current.sticker.x + center.x - stickerScreenGesture.current.center.x,
+      y: stickerScreenGesture.current.sticker.y + center.y - stickerScreenGesture.current.center.y,
+    };
+
+    if (points.length >= 2) {
+      const distance = getGestureDistance(points[0], points[1]);
+      const angle = getGestureAngle(points[0], points[1]);
+      nextSticker.scale = Math.min(
+        Math.max(stickerScreenGesture.current.sticker.scale * (distance / Math.max(stickerScreenGesture.current.distance, 1)), stickerScaleLimit.min),
+        stickerScaleLimit.max
+      );
+      nextSticker.rotation = stickerScreenGesture.current.sticker.rotation + angle - stickerScreenGesture.current.angle;
+    }
+
+    changeEditingSticker(nextSticker);
+  }
+
+  function finishStickerScreenGesture(event) {
+    if (!isStickerPickerOpen || !stickerScreenPointers.current.has(event.pointerId)) return;
+
+    event.stopPropagation();
+    stickerScreenPointers.current.delete(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const points = [...stickerScreenPointers.current.values()];
+    if (points.length === 0) {
+      stickerScreenGesture.current = null;
+      return;
+    }
+
+    const latestSticker = editingStickers.find((sticker) => sticker.id === stickerScreenGesture.current?.sticker.id) || stickerScreenGesture.current?.sticker;
+    if (latestSticker) stickerScreenGesture.current = createStickerScreenGesture(points, latestSticker);
   }
 
   function handleMonthScrollChange(monthKey, scrollTop) {
@@ -2253,6 +2342,7 @@ function Home({
   }
 
   function dismissStickerPicker() {
+    resetStickerScreenGesture();
     setIsStickerPickerOpen(false);
     setEditingStickers([]);
     setSelectedStickerId('');
@@ -2343,6 +2433,19 @@ function Home({
           reverseFromBig={returningFromUpload}
           bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)}
           onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')}
+        />
+      ) : null}
+      {isStickerPickerOpen ? (
+        <div
+          className="home-sticker-gesture-layer"
+          aria-hidden
+          onPointerDown={startStickerScreenGesture}
+          onPointerMove={updateStickerScreenGesture}
+          onPointerUp={finishStickerScreenGesture}
+          onPointerCancel={finishStickerScreenGesture}
+          onLostPointerCapture={() => {
+            if (stickerScreenPointers.current.size === 0) resetStickerScreenGesture();
+          }}
         />
       ) : null}
       <AnimatePresence>
