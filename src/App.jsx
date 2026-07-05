@@ -1349,7 +1349,7 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
 
 function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 0, bounceIndex = -1, bounceCount = 0, onChange, onRemove, onSelect }) {
   const shouldBounce = !editable && bounceKey > 0 && bounceIndex >= 0;
-  const bounceDelay = shouldBounce && bounceCount > 1 ? bounceIndex * 0.02 : 0;
+  const bounceDelay = shouldBounce && bounceCount > 1 ? bounceIndex * 0.05 : 0;
 
   return (
     <motion.div
