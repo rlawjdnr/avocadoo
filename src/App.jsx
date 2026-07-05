@@ -28,6 +28,7 @@ const assets = {
   upload: './assets/icon-upload.svg',
   pencil: './assets/icon-pencil.svg',
   photoDelete: './assets/icon-photo-delete.svg',
+  stickerDelete: './assets/icon-sticker-delete.svg',
   modalClose: './assets/icon-modal-close.svg',
   letterName: './assets/letter-name.svg',
   stickers: {
@@ -1363,7 +1364,7 @@ function HomeSticker({ sticker, editable = false, selected = false, onChange, on
             onRemove();
           }}
         >
-          <img src={assets.photoDelete} alt="" />
+          <img src={assets.stickerDelete} alt="" />
         </button>
       ) : null}
     </motion.div>
