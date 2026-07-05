@@ -495,6 +495,10 @@ img {
   touch-action: pan-y;
 }
 
+.week-list-sticker-editing {
+  padding-bottom: 389px;
+}
+
 .home-sticker-layer {
   position: absolute;
   inset: 0;
@@ -502,17 +506,9 @@ img {
   pointer-events: none;
 }
 
-.home-sticker-gesture-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 6;
-  pointer-events: auto;
-  touch-action: none;
-}
-
 .home-sticker-layer-editing {
-  pointer-events: auto;
-  touch-action: none;
+  pointer-events: none;
+  touch-action: pan-y;
 }
 
 .home-sticker {

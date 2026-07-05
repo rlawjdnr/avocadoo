@@ -1479,6 +1479,7 @@ function HomeStickerLayer({
 
   function startLayerGesture(event) {
     if (!editing) return;
+    if (event.pointerType === 'touch') return;
     if (event.target.closest?.('button')) return;
 
     event.stopPropagation();
@@ -1499,6 +1500,7 @@ function HomeStickerLayer({
 
   function updateLayerGesture(event) {
     if (!editing || !activePointers.current.has(event.pointerId) || !gesture.current) return;
+    if (event.pointerType === 'touch') return;
 
     event.stopPropagation();
     if (event.cancelable) event.preventDefault();
@@ -1526,6 +1528,7 @@ function HomeStickerLayer({
 
   function finishLayerGesture(event) {
     if (!editing || !activePointers.current.has(event.pointerId)) return;
+    if (event.pointerType === 'touch') return;
 
     event.stopPropagation();
     activePointers.current.delete(event.pointerId);
@@ -1597,7 +1600,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
         <>
           <div
             ref={weekListRef}
-            className="week-list"
+            className={`week-list ${editingStickers ? 'week-list-sticker-editing' : ''}`}
             data-month-key={monthKey}
             onScroll={(event) => onScrollChange?.(monthKey, event.currentTarget.scrollTop)}
           >
@@ -1846,7 +1849,6 @@ function Home({
   const monthTrackFrame = useRef(null);
   const pendingMonthTrackX = useRef(null);
   const longPressGesture = useRef(null);
-  const stickerScreenPointers = useRef(new Map());
   const stickerScreenGesture = useRef(null);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
@@ -2160,7 +2162,7 @@ function Home({
 
   function blockHomeTouchWhilePicking(event) {
     if (!isStickerPickerOpen) return;
-    if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable, .home-sticker-gesture-layer')) return;
+    if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable')) return;
     event.stopPropagation();
   }
 
@@ -2187,31 +2189,42 @@ function Home({
   }
 
   function resetStickerScreenGesture() {
-    stickerScreenPointers.current.clear();
     stickerScreenGesture.current = null;
+  }
+
+  function getStickerTouchPoints(touches) {
+    return Array.from(touches).map((touch) => ({ x: touch.clientX, y: touch.clientY }));
   }
 
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpen) return;
     if (event.target.closest?.('.sticker-picker-sheet, button')) return;
 
-    const selectedSticker = editingStickers.find((sticker) => sticker.id === selectedStickerId) || editingStickers[0];
+    const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
+    if (event.touches.length < 2 && !touchedStickerId) return;
+
+    const selectedSticker = editingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || selectedStickerId)) || editingStickers[0];
     if (!selectedSticker) return;
+
+    if (touchedStickerId && touchedStickerId !== selectedStickerId) {
+      setSelectedStickerId(touchedStickerId);
+    }
 
     event.stopPropagation();
     if (event.cancelable) event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    stickerScreenPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    stickerScreenGesture.current = createStickerScreenGesture([...stickerScreenPointers.current.values()], selectedSticker);
+    stickerScreenGesture.current = {
+      ...createStickerScreenGesture(getStickerTouchPoints(event.touches), selectedSticker),
+      startedOnSticker: Boolean(touchedStickerId),
+    };
   }
 
   function updateStickerScreenGesture(event) {
-    if (!isStickerPickerOpen || !stickerScreenPointers.current.has(event.pointerId) || !stickerScreenGesture.current) return;
+    if (!isStickerPickerOpen || !stickerScreenGesture.current) return;
+    if (event.touches.length < 2 && !stickerScreenGesture.current.startedOnSticker) return;
 
     event.stopPropagation();
     if (event.cancelable) event.preventDefault();
-    stickerScreenPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const points = [...stickerScreenPointers.current.values()];
+    const points = getStickerTouchPoints(event.touches);
     const center = getGestureCenter(points);
     const nextSticker = {
       ...stickerScreenGesture.current.sticker,
@@ -2233,17 +2246,15 @@ function Home({
   }
 
   function finishStickerScreenGesture(event) {
-    if (!isStickerPickerOpen || !stickerScreenPointers.current.has(event.pointerId)) return;
+    if (!isStickerPickerOpen || !stickerScreenGesture.current) return;
 
     event.stopPropagation();
-    stickerScreenPointers.current.delete(event.pointerId);
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-    const points = [...stickerScreenPointers.current.values()];
-    if (points.length === 0) {
+    if (event.touches.length < 2) {
       stickerScreenGesture.current = null;
       return;
     }
 
+    const points = getStickerTouchPoints(event.touches);
     const latestSticker = editingStickers.find((sticker) => sticker.id === stickerScreenGesture.current?.sticker.id) || stickerScreenGesture.current?.sticker;
     if (latestSticker) stickerScreenGesture.current = createStickerScreenGesture(points, latestSticker);
   }
@@ -2383,6 +2394,10 @@ function Home({
       className="phone home-screen"
       onPointerDownCapture={blockHomeTouchWhilePicking}
       onClickCapture={blockHomeTouchWhilePicking}
+      onTouchStartCapture={startStickerScreenGesture}
+      onTouchMoveCapture={updateStickerScreenGesture}
+      onTouchEndCapture={finishStickerScreenGesture}
+      onTouchCancelCapture={finishStickerScreenGesture}
       {...homeMotionProps}
       style={homeMotionStyle}
     >
@@ -2433,19 +2448,6 @@ function Home({
           reverseFromBig={returningFromUpload}
           bigWidth={Math.max(uploadButtonSize.small, screenPushDistance - 32)}
           onNavigate={() => onSelectWeek(activeWeeks[0], 'upload')}
-        />
-      ) : null}
-      {isStickerPickerOpen ? (
-        <div
-          className="home-sticker-gesture-layer"
-          aria-hidden
-          onPointerDown={startStickerScreenGesture}
-          onPointerMove={updateStickerScreenGesture}
-          onPointerUp={finishStickerScreenGesture}
-          onPointerCancel={finishStickerScreenGesture}
-          onLostPointerCapture={() => {
-            if (stickerScreenPointers.current.size === 0) resetStickerScreenGesture();
-          }}
         />
       ) : null}
       <AnimatePresence>
