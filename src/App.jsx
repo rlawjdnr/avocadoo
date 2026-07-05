@@ -987,6 +987,15 @@ function readLocalStickers() {
   }
 }
 
+function normalizeStickersByMonth(rows) {
+  return Object.fromEntries(
+    (rows || []).map((row) => [
+      row.month_key,
+      Array.isArray(row.stickers) ? row.stickers.map((sticker, index) => normalizeSticker(sticker, `${row.month_key}-${index}`)) : [],
+    ])
+  );
+}
+
 function writeLocalStickers(stickersByMonth) {
   if (typeof window === 'undefined') return;
 
@@ -1777,6 +1786,7 @@ function Home({
   stickersByMonth,
   onChangeMonth,
   onChangeStickers,
+  onSaveMonthStickers,
   onSelectWeek,
   returningFromUpload,
   transitionKind,
@@ -2191,6 +2201,7 @@ function Home({
       ...current,
       [activeMonthKey]: nextStickers,
     }));
+    void onSaveMonthStickers?.(activeMonthKey, nextStickers, activeMemberId);
     setStickerBounce((current) => ({
       key: current.key + 1,
       ids: changedStickerIds,
@@ -3304,6 +3315,69 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
   );
 }
 
+async function fetchHomeStickers() {
+  const localStickers = readLocalStickers();
+  if (!hasSupabaseConfig) return localStickers;
+
+  const { data, error } = await supabase
+    .from('home_stickers')
+    .select('month_key, stickers')
+    .eq('space_id', coupleSpaceId);
+
+  if (error) {
+    if (isMissingSupabaseSchema(error)) return readLocalStickers();
+    throw error;
+  }
+
+  const stickers = normalizeStickersByMonth(data);
+  const missingLocalEntries = Object.entries(localStickers).filter(
+    ([monthKey, monthStickers]) => !Object.prototype.hasOwnProperty.call(stickers, monthKey) && monthStickers?.length
+  );
+  if (missingLocalEntries.length > 0) {
+    await Promise.all(
+      missingLocalEntries.map(([monthKey, monthStickers]) =>
+        saveHomeMonthStickers(monthKey, monthStickers).catch((error) => {
+          console.warn('Local sticker migration failed', error);
+        })
+      )
+    );
+  }
+
+  const mergedStickers = {
+    ...localStickers,
+    ...stickers,
+  };
+  writeLocalStickers(mergedStickers);
+  return mergedStickers;
+}
+
+async function saveHomeMonthStickers(monthKey, stickers, memberId = currentMemberId) {
+  const normalizedStickers = (stickers || []).map((sticker) => normalizeSticker(sticker));
+  if (!hasSupabaseConfig) {
+    return normalizedStickers;
+  }
+
+  const { error } = await supabase
+    .from('home_stickers')
+    .upsert(
+      {
+        space_id: coupleSpaceId,
+        month_key: monthKey,
+        stickers: normalizedStickers,
+        updated_by: memberId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'space_id,month_key' }
+    );
+
+  if (error) {
+    if (isMissingSupabaseSchema(error)) return normalizedStickers;
+    throw error;
+  }
+
+  return normalizedStickers;
+}
+
 function isMissingSupabaseSchema(error) {
   if (!error) return false;
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''} ${error.code || ''}`;
@@ -3316,6 +3390,7 @@ function isMissingSupabaseSchema(error) {
     message.includes('diary_comments') ||
     message.includes('diary_entry_likes') ||
     message.includes('diary_comment_likes') ||
+    message.includes('home_stickers') ||
     message.includes('PGRST200') ||
     message.includes('PGRST205')
   );
@@ -3582,13 +3657,23 @@ export default function App() {
     });
   }
 
+  async function persistMonthStickers(monthKey, stickers, memberId = selectedMemberId) {
+    try {
+      await saveHomeMonthStickers(monthKey, stickers, memberId);
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error.message || '스티커를 서버에 저장하지 못했어요.');
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
 
-    fetchDiaryEntries(selectedMemberId)
-      .then((nextEntries) => {
+    Promise.all([fetchDiaryEntries(selectedMemberId), fetchHomeStickers()])
+      .then(([nextEntries, nextStickers]) => {
         if (!isMounted) return;
         setEntriesAndCache(nextEntries);
+        setStickersAndCache(nextStickers);
         setSelectedEntryId(nextEntries[0]?.id || null);
         setLoadError('');
       })
@@ -3620,6 +3705,41 @@ export default function App() {
     }, splashMinimumDurationMs);
 
     return () => window.clearTimeout(timerId);
+  }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) return undefined;
+
+    const channel = supabase
+      .channel(`home-stickers:${coupleSpaceId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'home_stickers', filter: `space_id=eq.${coupleSpaceId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedMonthKey = payload.old?.month_key;
+            if (!deletedMonthKey) return;
+            setStickersAndCache((current) => {
+              const next = { ...current };
+              delete next[deletedMonthKey];
+              return next;
+            });
+            return;
+          }
+
+          const row = payload.new;
+          if (!row?.month_key) return;
+          setStickersAndCache((current) => ({
+            ...current,
+            [row.month_key]: Array.isArray(row.stickers) ? row.stickers.map((sticker, index) => normalizeSticker(sticker, `${row.month_key}-${index}`)) : [],
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -4222,6 +4342,7 @@ export default function App() {
           activeMemberId={selectedMemberId}
           onChangeMonth={changeMonth}
           onChangeStickers={setStickersAndCache}
+          onSaveMonthStickers={persistMonthStickers}
           onSelectWeek={openWeek}
           onOpenNicknamePicker={() => setIsNicknamePickerOpen(true)}
         />
