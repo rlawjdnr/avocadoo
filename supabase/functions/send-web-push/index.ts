@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type PushEventType = 'diary_created' | 'diary_liked' | 'comment_created';
+type PushEventType = 'diary_created' | 'diary_liked' | 'comment_created' | 'sticker_created';
 
 type PushRequest = {
   eventType?: PushEventType;
@@ -53,7 +53,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 function buildNotification(eventType: PushEventType, nickname: string, entryId: string, siteUrl: string) {
   const url = new URL(siteUrl);
-  url.searchParams.set('entry', entryId);
+  if (entryId) url.searchParams.set('entry', entryId);
 
   if (eventType === 'diary_created') {
     return {
@@ -67,6 +67,14 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
     return {
       title: nickname,
       body: '좋아요를 남겼어요.',
+      url: url.toString(),
+    };
+  }
+
+  if (eventType === 'sticker_created') {
+    return {
+      title: nickname,
+      body: '새로운 스티커를 붙였습니다.',
       url: url.toString(),
     };
   }
@@ -107,43 +115,52 @@ Deno.serve(async (request) => {
   }
 
   const { eventType, actorMemberId, entryId } = body;
-  if (!eventType || !actorMemberId || !entryId) {
-    return jsonResponse({ error: 'eventType, actorMemberId, and entryId are required' }, 400);
+  if (!eventType || !actorMemberId) {
+    return jsonResponse({ error: 'eventType and actorMemberId are required' }, 400);
   }
 
-  if (!['diary_created', 'diary_liked', 'comment_created'].includes(eventType)) {
+  if (!['diary_created', 'diary_liked', 'comment_created', 'sticker_created'].includes(eventType)) {
     return jsonResponse({ error: 'Unsupported eventType' }, 400);
+  }
+
+  if (eventType !== 'sticker_created' && !entryId) {
+    return jsonResponse({ error: 'entryId is required for diary notifications' }, 400);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
 
-  const [{ data: actorData, error: actorError }, { data: entryData, error: entryError }] = await Promise.all([
-    supabase.from('couple_members').select('id, nickname, space_id').eq('id', actorMemberId).single(),
-    supabase.from('diary_entries').select('id, author_id, space_id').eq('id', entryId).single(),
-  ]);
+  const { data: actorData, error: actorError } = await supabase
+    .from('couple_members')
+    .select('id, nickname, space_id')
+    .eq('id', actorMemberId)
+    .single();
+
+  const { data: entryData, error: entryError } = eventType === 'sticker_created'
+    ? { data: null, error: null }
+    : await supabase.from('diary_entries').select('id, author_id, space_id').eq('id', entryId).single();
 
   const actor = actorData as MemberRow | null;
   const entry = entryData as EntryRow | null;
 
-  if (actorError || entryError || !actor || !entry) {
+  if (actorError || !actor || (eventType !== 'sticker_created' && (entryError || !entry))) {
     return jsonResponse({ error: 'Actor or diary entry not found' }, 404);
   }
 
   let targetMemberIds: string[] = [];
 
-  if (eventType === 'diary_created') {
+  if (eventType === 'diary_created' || eventType === 'sticker_created') {
     const { data: members, error: membersError } = await supabase
       .from('couple_members')
       .select('id')
-      .eq('space_id', entry.space_id)
+      .eq('space_id', eventType === 'sticker_created' ? actor.space_id : entry!.space_id)
       .neq('id', actorMemberId);
 
     if (membersError) return jsonResponse({ error: membersError.message }, 500);
     targetMemberIds = (members || []).map((member) => member.id);
-  } else if (entry.author_id !== actorMemberId) {
-    targetMemberIds = [entry.author_id];
+  } else if (entry!.author_id !== actorMemberId) {
+    targetMemberIds = [entry!.author_id];
   }
 
   if (targetMemberIds.length === 0) {
@@ -159,7 +176,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: subscriptionsError.message }, 500);
   }
 
-  const notification = buildNotification(eventType, actor.nickname, entry.id, siteUrl);
+  const notification = buildNotification(eventType, actor.nickname, entry?.id || '', siteUrl);
   webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
   const settled = await Promise.allSettled(
@@ -176,7 +193,7 @@ Deno.serve(async (request) => {
           JSON.stringify({
             ...notification,
             type: eventType,
-            entryId: entry.id,
+            entryId: entry?.id || '',
           })
         );
 

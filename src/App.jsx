@@ -33,7 +33,7 @@ const assets = {
   stickers: {
     heart: './assets/sticker-heart.svg',
     smiley: './assets/sticker-smiley.svg',
-    burst: './assets/sticker-burst.svg',
+    burst: './assets/sticker-burst.svg?v=2',
   },
 };
 
@@ -213,6 +213,10 @@ const listFocusedEntryInset = 96;
 const listWeekAnchorOffset = 120;
 const stickerStorageKey = 'avocadoo.home.stickers.v1';
 const stickerBaseSize = 100;
+const stickerScaleLimit = {
+  min: 0.18,
+  max: 2.4,
+};
 const stickerOptions = [
   { id: 'heart', label: '하트', src: assets.stickers.heart },
   { id: 'smiley', label: '스마일', src: assets.stickers.smiley },
@@ -916,7 +920,7 @@ function normalizeSticker(sticker, fallbackId = '') {
     type: option.id,
     x: Number.isFinite(sticker?.x) ? sticker.x : 226,
     y: Number.isFinite(sticker?.y) ? sticker.y : defaultStickerPosition.y,
-    scale: Number.isFinite(sticker?.scale) ? Math.min(Math.max(sticker.scale, 0.48), 2.4) : defaultStickerPosition.scale,
+    scale: Number.isFinite(sticker?.scale) ? Math.min(Math.max(sticker.scale, stickerScaleLimit.min), stickerScaleLimit.max) : defaultStickerPosition.scale,
     rotation: Number.isFinite(sticker?.rotation) ? sticker.rotation : defaultStickerPosition.rotation,
   };
 }
@@ -1313,90 +1317,10 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
 }
 
 function HomeSticker({ sticker, editable = false, selected = false, onChange, onRemove, onSelect }) {
-  const activePointers = useRef(new Map());
-  const gesture = useRef(null);
-
-  function getCenter(points) {
-    const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
-    return { x: total.x / points.length, y: total.y / points.length };
-  }
-
-  function getDistance(a, b) {
-    return Math.hypot(b.x - a.x, b.y - a.y);
-  }
-
-  function getAngle(a, b) {
-    return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-  }
-
-  function startStickerGesture(event) {
-    if (!editable) return;
-    event.stopPropagation();
-    onSelect?.(sticker.id);
-    activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    const points = [...activePointers.current.values()];
-    const center = getCenter(points);
-    gesture.current = {
-      center,
-      x: sticker.x,
-      y: sticker.y,
-      scale: sticker.scale,
-      rotation: sticker.rotation,
-      distance: points.length >= 2 ? getDistance(points[0], points[1]) : 1,
-      angle: points.length >= 2 ? getAngle(points[0], points[1]) : 0,
-    };
-  }
-
-  function updateStickerGesture(event) {
-    if (!editable || !activePointers.current.has(event.pointerId) || !gesture.current) return;
-    event.stopPropagation();
-    if (event.cancelable) event.preventDefault();
-    activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const points = [...activePointers.current.values()];
-    const center = getCenter(points);
-    const next = {
-      ...sticker,
-      x: gesture.current.x + center.x - gesture.current.center.x,
-      y: gesture.current.y + center.y - gesture.current.center.y,
-    };
-
-    if (points.length >= 2) {
-      const distance = getDistance(points[0], points[1]);
-      const angle = getAngle(points[0], points[1]);
-      next.scale = Math.min(Math.max(gesture.current.scale * (distance / Math.max(gesture.current.distance, 1)), 0.48), 2.4);
-      next.rotation = gesture.current.rotation + angle - gesture.current.angle;
-    }
-
-    onChange(next);
-  }
-
-  function finishStickerGesture(event) {
-    if (!editable) return;
-    event.stopPropagation();
-    activePointers.current.delete(event.pointerId);
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-    const points = [...activePointers.current.values()];
-    if (points.length === 0) {
-      gesture.current = null;
-      return;
-    }
-
-    const center = getCenter(points);
-    gesture.current = {
-      center,
-      x: sticker.x,
-      y: sticker.y,
-      scale: sticker.scale,
-      rotation: sticker.rotation,
-      distance: points.length >= 2 ? getDistance(points[0], points[1]) : 1,
-      angle: points.length >= 2 ? getAngle(points[0], points[1]) : 0,
-    };
-  }
-
   return (
     <motion.div
       className={`home-sticker ${editable ? 'home-sticker-editable' : ''} ${selected ? 'home-sticker-selected' : ''}`}
+      data-sticker-id={sticker.id}
       style={{
         left: sticker.x,
         top: sticker.y,
@@ -1407,10 +1331,6 @@ function HomeSticker({ sticker, editable = false, selected = false, onChange, on
       }}
       initial={false}
       animate={{ opacity: 1 }}
-      onPointerDown={startStickerGesture}
-      onPointerMove={updateStickerGesture}
-      onPointerUp={finishStickerGesture}
-      onPointerCancel={finishStickerGesture}
     >
       <img className="home-sticker-image" src={getStickerSrc(sticker.type)} alt="" />
       {editable && selected ? (
@@ -1432,10 +1352,114 @@ function HomeSticker({ sticker, editable = false, selected = false, onChange, on
 }
 
 function HomeStickerLayer({ stickers = [], editStickers = [], selectedStickerId = '', editing = false, onStickerChange, onStickerRemove, onStickerSelect }) {
+  const activePointers = useRef(new Map());
+  const gesture = useRef(null);
   const visibleStickers = editing ? editStickers : stickers;
+  const selectedSticker = editStickers.find((sticker) => sticker.id === selectedStickerId);
+
+  function getCenter(points) {
+    const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    return { x: total.x / points.length, y: total.y / points.length };
+  }
+
+  function getDistance(a, b) {
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  }
+
+  function getAngle(a, b) {
+    return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+  }
+
+  function resetLayerGesture() {
+    activePointers.current.clear();
+    gesture.current = null;
+  }
+
+  function createLayerGesture(points, sticker) {
+    const center = getCenter(points);
+    return {
+      center,
+      sticker,
+      distance: points.length >= 2 ? getDistance(points[0], points[1]) : 1,
+      angle: points.length >= 2 ? getAngle(points[0], points[1]) : 0,
+    };
+  }
+
+  function startLayerGesture(event) {
+    if (!editing) return;
+    if (event.target.closest?.('button')) return;
+
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+
+    const touchedStickerId = event.target.closest?.('.home-sticker')?.dataset?.stickerId;
+    const nextSelectedSticker = editStickers.find((sticker) => sticker.id === touchedStickerId) || selectedSticker || editStickers[0];
+    if (!nextSelectedSticker) return;
+
+    if (touchedStickerId && touchedStickerId !== selectedStickerId) {
+      onStickerSelect?.(touchedStickerId);
+    }
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    gesture.current = createLayerGesture([...activePointers.current.values()], nextSelectedSticker);
+  }
+
+  function updateLayerGesture(event) {
+    if (!editing || !activePointers.current.has(event.pointerId) || !gesture.current) return;
+
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+    activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = [...activePointers.current.values()];
+    const center = getCenter(points);
+    const next = {
+      ...gesture.current.sticker,
+      x: gesture.current.sticker.x + center.x - gesture.current.center.x,
+      y: gesture.current.sticker.y + center.y - gesture.current.center.y,
+    };
+
+    if (points.length >= 2) {
+      const distance = getDistance(points[0], points[1]);
+      const angle = getAngle(points[0], points[1]);
+      next.scale = Math.min(
+        Math.max(gesture.current.sticker.scale * (distance / Math.max(gesture.current.distance, 1)), stickerScaleLimit.min),
+        stickerScaleLimit.max
+      );
+      next.rotation = gesture.current.sticker.rotation + angle - gesture.current.angle;
+    }
+
+    onStickerChange?.(next);
+  }
+
+  function finishLayerGesture(event) {
+    if (!editing || !activePointers.current.has(event.pointerId)) return;
+
+    event.stopPropagation();
+    activePointers.current.delete(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const points = [...activePointers.current.values()];
+    if (points.length === 0) {
+      gesture.current = null;
+      return;
+    }
+
+    const latestSticker = editStickers.find((sticker) => sticker.id === gesture.current?.sticker.id) || gesture.current?.sticker;
+    if (latestSticker) gesture.current = createLayerGesture(points, latestSticker);
+  }
 
   return (
-    <div className="home-sticker-layer" aria-hidden={visibleStickers.length === 0}>
+    <div
+      className={`home-sticker-layer ${editing ? 'home-sticker-layer-editing' : ''}`}
+      aria-hidden={visibleStickers.length === 0}
+      onPointerDown={startLayerGesture}
+      onPointerMove={updateLayerGesture}
+      onPointerUp={finishLayerGesture}
+      onPointerCancel={finishLayerGesture}
+      onLostPointerCapture={() => {
+        if (activePointers.current.size === 0) resetLayerGesture();
+      }}
+    >
       {visibleStickers.map((sticker) => (
         <HomeSticker
           key={sticker.id}
@@ -1516,7 +1540,59 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
   );
 }
 
-function StickerPickerSheet({ onAddSticker, onApply, onDismiss }) {
+function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss }) {
+  const [dragSticker, setDragSticker] = useState(null);
+  const dragGesture = useRef(null);
+  const blockNextClick = useRef(false);
+
+  function startStickerOptionDrag(event, option) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragGesture.current = {
+      pointerId: event.pointerId,
+      type: option.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+  }
+
+  function moveStickerOptionDrag(event) {
+    const gesture = dragGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (!gesture.moved && Math.hypot(deltaX, deltaY) < 8) return;
+
+    gesture.moved = true;
+    if (event.cancelable) event.preventDefault();
+    setDragSticker({
+      type: gesture.type,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function finishStickerOptionDrag(event, cancelled = false) {
+    const gesture = dragGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    dragGesture.current = null;
+    setDragSticker(null);
+
+    if (!cancelled && gesture.moved) {
+      if (event.cancelable) event.preventDefault();
+      blockNextClick.current = true;
+      onDropSticker?.(gesture.type, { x: event.clientX, y: event.clientY });
+      window.setTimeout(() => {
+        blockNextClick.current = false;
+      }, 120);
+    }
+  }
+
   return (
     <div className="sticker-picker-layer" role="dialog" aria-modal="true" aria-label="스티커 꾸미기">
       <motion.section
@@ -1536,7 +1612,14 @@ function StickerPickerSheet({ onAddSticker, onApply, onDismiss }) {
               type="button"
               key={option.id}
               aria-label={`${option.label} 스티커`}
-              onClick={() => onAddSticker(option.id)}
+              onPointerDown={(event) => startStickerOptionDrag(event, option)}
+              onPointerMove={moveStickerOptionDrag}
+              onPointerUp={finishStickerOptionDrag}
+              onPointerCancel={(event) => finishStickerOptionDrag(event, true)}
+              onClick={() => {
+                if (blockNextClick.current) return;
+                onAddSticker(option.id);
+              }}
             >
               <img src={option.src} alt="" />
             </button>
@@ -1548,6 +1631,17 @@ function StickerPickerSheet({ onAddSticker, onApply, onDismiss }) {
           </button>
         </div>
       </motion.section>
+      {dragSticker ? (
+        <div
+          className="sticker-drag-preview"
+          style={{
+            left: dragSticker.x,
+            top: dragSticker.y,
+          }}
+        >
+          <img src={getStickerSrc(dragSticker.type)} alt="" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1628,6 +1722,7 @@ function Home({
   transitionKind,
   screenPushDistance,
   currentNickname = currentMemberNickname,
+  activeMemberId = currentMemberId,
   onOpenNicknamePicker,
 }) {
   const dragBlockedClick = useRef(false);
@@ -1972,6 +2067,38 @@ function Home({
     });
   }
 
+  function dropEditingSticker(type, point) {
+    const viewport = monthViewportRef.current;
+    if (!viewport) return;
+
+    const viewportRect = viewport.getBoundingClientRect();
+    if (
+      point.x < viewportRect.left ||
+      point.x > viewportRect.right ||
+      point.y < viewportRect.top ||
+      point.y > viewportRect.bottom
+    ) {
+      return;
+    }
+
+    const sheet = document.querySelector('.sticker-picker-sheet');
+    const sheetRect = sheet?.getBoundingClientRect();
+    if (sheetRect && point.y >= sheetRect.top) return;
+
+    setEditingStickers((current) => {
+      const nextSticker = normalizeSticker({
+        id: crypto.randomUUID(),
+        type,
+        x: Math.min(Math.max(point.x - viewportRect.left - stickerBaseSize / 2, 8), viewportRect.width - stickerBaseSize - 8),
+        y: Math.min(Math.max(point.y - viewportRect.top - stickerBaseSize / 2, 8), viewportRect.height - stickerBaseSize - 8),
+        scale: defaultStickerPosition.scale,
+        rotation: defaultStickerPosition.rotation,
+      });
+      setSelectedStickerId(nextSticker.id);
+      return [...current, nextSticker];
+    });
+  }
+
   function changeEditingSticker(nextSticker) {
     setEditingStickers((current) => current.map((sticker) => (sticker.id === nextSticker.id ? normalizeSticker(nextSticker) : sticker)));
   }
@@ -1991,10 +2118,17 @@ function Home({
   }
 
   function applySticker() {
+    const previousStickers = stickersByMonth[activeMonthKey] || [];
+    const nextStickers = editingStickers.map((sticker) => normalizeSticker(sticker));
+    const hasNewSticker = nextStickers.length > previousStickers.length;
+
     onChangeStickers((current) => ({
       ...current,
-      [activeMonthKey]: editingStickers.map((sticker) => normalizeSticker(sticker)),
+      [activeMonthKey]: nextStickers,
     }));
+    if (hasNewSticker) {
+      void notifyWebPush('sticker_created', {}, activeMemberId);
+    }
     dismissStickerPicker();
   }
 
@@ -2061,6 +2195,7 @@ function Home({
         {isStickerPickerOpen ? (
           <StickerPickerSheet
             onAddSticker={addEditingSticker}
+            onDropSticker={dropEditingSticker}
             onApply={applySticker}
             onDismiss={dismissStickerPicker}
           />
@@ -4000,6 +4135,7 @@ export default function App() {
           screenPushDistance={screenPushDistance}
           returningFromUpload={previousScreen === 'upload'}
           currentNickname={selectedMemberNickname}
+          activeMemberId={selectedMemberId}
           onChangeMonth={changeMonth}
           onChangeStickers={setStickersAndCache}
           onSelectWeek={openWeek}
