@@ -32,9 +32,9 @@ const assets = {
   modalClose: './assets/icon-modal-close.svg',
   letterName: './assets/letter-name.svg',
   stickers: {
-    heart: './assets/sticker-heart.svg',
-    smiley: './assets/sticker-smiley.svg',
-    burst: './assets/sticker-burst.svg?v=2',
+    heart: './assets/sticker-heart.svg?v=3',
+    smiley: './assets/sticker-smiley.svg?v=3',
+    burst: './assets/sticker-burst.svg?v=3',
   },
 };
 
