@@ -1819,7 +1819,7 @@ function Home({
   function canStartHomeLongPress(event) {
     if (isStickerPickerOpen) return false;
     if (event.pointerType === 'mouse' && event.button !== 0) return false;
-    return !event.target.closest?.('button, input, textarea, select, [role="button"], .sticker-picker-sheet, .home-sticker-editable');
+    return !event.target.closest?.('input, textarea, select, .sticker-picker-sheet, .home-sticker-editable');
   }
 
   function startHomeLongPress(event) {
