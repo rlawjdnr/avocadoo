@@ -1854,6 +1854,8 @@ function Home({
   const stickerScreenGesture = useRef(null);
   const homeSectionRef = useRef(null);
   const isStickerPickerOpenRef = useRef(false);
+  const editingStickersRef = useRef([]);
+  const selectedStickerIdRef = useRef('');
   const seededDefaultStickerId = useRef('');
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
@@ -1878,6 +1880,14 @@ function Home({
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
+
+  useEffect(() => {
+    editingStickersRef.current = editingStickers;
+  }, [editingStickers]);
+
+  useEffect(() => {
+    selectedStickerIdRef.current = selectedStickerId;
+  }, [selectedStickerId]);
 
   useEffect(() => {
     isStickerPickerOpenRef.current = isStickerPickerOpen;
@@ -2250,21 +2260,33 @@ function Home({
 
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
-    if (event.target.closest?.('button')) return;
+    if (event.touches.length < 2 && event.target.closest?.('button')) return;
 
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
     const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
+    const currentEditingStickers = editingStickersRef.current;
+    const currentSelectedStickerId = selectedStickerIdRef.current;
+    const selectedSticker = currentEditingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || currentSelectedStickerId)) || currentEditingStickers[0];
+    if (!selectedSticker) return;
+
     if (event.touches.length < 2) {
-      if (touchedStickerId && touchedStickerId !== selectedStickerId) {
+      if (!touchedStickerId) return;
+
+      if (touchedStickerId !== currentSelectedStickerId) {
         setSelectedStickerId(touchedStickerId);
       }
+
+      event.stopPropagation();
+      if (event.cancelable) event.preventDefault();
+      stickerScreenGesture.current = {
+        ...createStickerScreenGesture(getStickerTouchPoints(event.touches), selectedSticker),
+        startedOnSticker: true,
+        startedOnSheet: isSheetTouch,
+      };
       return;
     }
 
-    const selectedSticker = editingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || selectedStickerId)) || editingStickers[0];
-    if (!selectedSticker) return;
-
-    if (touchedStickerId && touchedStickerId !== selectedStickerId) {
+    if (touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
       setSelectedStickerId(touchedStickerId);
     }
 
