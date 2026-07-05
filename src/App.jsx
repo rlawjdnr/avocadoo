@@ -945,6 +945,17 @@ function normalizeSticker(sticker, fallbackId = '') {
   };
 }
 
+function isSameSticker(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.type === b.type &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.scale === b.scale &&
+    a.rotation === b.rotation
+  );
+}
+
 function createDefaultSticker(type = 'smiley', viewportWidth = defaultScreenPushDistance) {
   return normalizeSticker({
     id: crypto.randomUUID(),
@@ -1336,8 +1347,9 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
   );
 }
 
-function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 0, onChange, onRemove, onSelect }) {
-  const shouldBounce = !editable && bounceKey > 0;
+function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 0, bounceIndex = -1, bounceCount = 0, onChange, onRemove, onSelect }) {
+  const shouldBounce = !editable && bounceKey > 0 && bounceIndex >= 0;
+  const bounceDelay = shouldBounce && bounceCount > 1 ? bounceIndex * 0.02 : 0;
 
   return (
     <motion.div
@@ -1355,13 +1367,13 @@ function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 
       animate={{ opacity: 1 }}
     >
       <motion.img
-        key={`${sticker.id}-${bounceKey}`}
+        key={`${sticker.id}-${shouldBounce ? bounceKey : 'stable'}`}
         className="home-sticker-image"
         src={getStickerSrc(sticker.type)}
         alt=""
         initial={shouldBounce ? { scale: 0.9 } : false}
         animate={shouldBounce ? { scale: [0.9, 1.1, 0.98, 1] } : { scale: 1 }}
-        transition={shouldBounce ? { duration: 0.34, ease: [0.2, 0.8, 0.2, 1] } : { duration: 0 }}
+        transition={shouldBounce ? { duration: 0.34, delay: bounceDelay, ease: [0.2, 0.8, 0.2, 1] } : { duration: 0 }}
       />
       {editable && selected ? (
         <button
@@ -1381,11 +1393,22 @@ function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 
   );
 }
 
-function HomeStickerLayer({ stickers = [], editStickers = [], selectedStickerId = '', editing = false, bounceKey = 0, onStickerChange, onStickerRemove, onStickerSelect }) {
+function HomeStickerLayer({
+  stickers = [],
+  editStickers = [],
+  selectedStickerId = '',
+  editing = false,
+  bounceKey = 0,
+  bounceStickerIds = [],
+  onStickerChange,
+  onStickerRemove,
+  onStickerSelect,
+}) {
   const activePointers = useRef(new Map());
   const gesture = useRef(null);
   const visibleStickers = editing ? editStickers : stickers;
   const selectedSticker = editStickers.find((sticker) => sticker.id === selectedStickerId);
+  const bounceStickerIndexes = useMemo(() => new Map(bounceStickerIds.map((id, index) => [id, index])), [bounceStickerIds]);
 
   function getCenter(points) {
     const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
@@ -1497,6 +1520,8 @@ function HomeStickerLayer({ stickers = [], editStickers = [], selectedStickerId 
           editable={editing}
           selected={editing && selectedStickerId === sticker.id}
           bounceKey={bounceKey}
+          bounceIndex={bounceStickerIndexes.has(sticker.id) ? bounceStickerIndexes.get(sticker.id) : -1}
+          bounceCount={bounceStickerIds.length}
           onChange={onStickerChange}
           onRemove={() => onStickerRemove?.(sticker.id)}
           onSelect={onStickerSelect}
@@ -1513,6 +1538,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
     selectedStickerId = '',
     editingStickers = false,
     stickerBounceKey = 0,
+    stickerBounceIds = [],
     onStickerChange,
     onStickerRemove,
     onStickerSelect,
@@ -1563,6 +1589,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
             selectedStickerId={selectedStickerId}
             editing={editingStickers}
             bounceKey={stickerBounceKey}
+            bounceStickerIds={stickerBounceIds}
             onStickerChange={onStickerChange}
             onStickerRemove={onStickerRemove}
             onStickerSelect={onStickerSelect}
@@ -1768,7 +1795,7 @@ function Home({
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
-  const [stickerBounceKey, setStickerBounceKey] = useState(0);
+  const [stickerBounce, setStickerBounce] = useState({ key: 0, ids: [] });
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
@@ -2152,15 +2179,22 @@ function Home({
   }
 
   function applySticker() {
-    const previousStickers = stickersByMonth[activeMonthKey] || [];
+    const previousStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => normalizeSticker(sticker));
+    const previousStickersById = new Map(previousStickers.map((sticker) => [sticker.id, sticker]));
     const nextStickers = editingStickers.map((sticker) => normalizeSticker(sticker));
+    const changedStickerIds = nextStickers
+      .filter((sticker) => !isSameSticker(previousStickersById.get(sticker.id), sticker))
+      .map((sticker) => sticker.id);
     const hasNewSticker = nextStickers.length > previousStickers.length;
 
     onChangeStickers((current) => ({
       ...current,
       [activeMonthKey]: nextStickers,
     }));
-    setStickerBounceKey((current) => current + 1);
+    setStickerBounce((current) => ({
+      key: current.key + 1,
+      ids: changedStickerIds,
+    }));
     if (hasNewSticker) {
       void notifyWebPush('sticker_created', { month: activeMonthKey }, activeMemberId);
     }
@@ -2211,7 +2245,8 @@ function Home({
               editStickers={index === activeMonthIndex ? editingStickers : []}
               selectedStickerId={index === activeMonthIndex ? selectedStickerId : ''}
               editingStickers={index === activeMonthIndex && isStickerPickerOpen}
-              stickerBounceKey={index === activeMonthIndex ? stickerBounceKey : 0}
+              stickerBounceKey={index === activeMonthIndex ? stickerBounce.key : 0}
+              stickerBounceIds={index === activeMonthIndex ? stickerBounce.ids : []}
               onStickerChange={changeEditingSticker}
               onStickerRemove={removeEditingSticker}
               onStickerSelect={setSelectedStickerId}
