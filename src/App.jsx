@@ -2745,7 +2745,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function getFocusedPhotoInitialMotion() {
     const rect = focusedPhoto?.sourceRect;
     if (!rect || typeof window === 'undefined') {
-      return { opacity: 0, scale: 0.34, rotateX: 68, rotateZ: -4, z: -420 };
+      return { opacity: 0, scale: 0.34, rotateX: 1.8, rotateZ: -1.2, z: -420 };
     }
 
     const targetWidth = Math.min(window.innerWidth * 0.78, 520);
@@ -2754,8 +2754,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       x: rect.left + rect.width / 2 - window.innerWidth / 2,
       y: rect.top + rect.height / 2 - window.innerHeight / 2 - 24,
       scale: Math.max(0.28, Math.min(0.5, rect.width / targetWidth)),
-      rotateX: 68,
-      rotateZ: -4,
+      rotateX: 1.8,
+      rotateZ: -1.2,
       z: -420,
     };
   }
@@ -3213,7 +3213,7 @@ function CommentRow({ comment, onToggleCommentLike }) {
 
 function getFocusedPhotoInitialMotion(sourceRect) {
   if (!sourceRect || typeof window === 'undefined') {
-    return { opacity: 0, scale: 0.34, rotateX: 68, rotateZ: -4, z: -420, filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))' };
+    return { opacity: 0, scale: 0.34, rotateX: 1.8, rotateZ: -1.2, z: -420, filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))' };
   }
 
   const targetWidth = Math.min(window.innerWidth * 0.78, 520);
@@ -3222,8 +3222,8 @@ function getFocusedPhotoInitialMotion(sourceRect) {
     x: sourceRect.left + sourceRect.width / 2 - window.innerWidth / 2,
     y: sourceRect.top + sourceRect.height / 2 - window.innerHeight / 2 - 24,
     scale: Math.max(0.28, Math.min(0.5, sourceRect.width / targetWidth)),
-    rotateX: 68,
-    rotateZ: -4,
+    rotateX: 1.8,
+    rotateZ: -1.2,
     z: -420,
     filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
   };
@@ -3240,8 +3240,8 @@ function getFocusedPhotoVerticalFlightPath(sourceRect) {
     x: [startX, startX * 0.66, startX * 0.38, startX * 0.14, 0],
     y: [startY, startY - verticalSwing, startY + verticalSwing * 0.82, startY - verticalSwing * 0.18, 0],
     scale: [initial.scale || 0.34, 0.48, 0.68, 0.88, 1],
-    rotateX: [initial.rotateX || 68, -34, 22, -7, 0],
-    rotateZ: [initial.rotateZ || -4, -2, 1.4, -0.5, 0],
+    rotateX: [initial.rotateX || 1.8, -1.4, 1.1, -0.45, 0],
+    rotateZ: [initial.rotateZ || -1.2, -0.8, 0.5, -0.2, 0],
     z: [initial.z || -420, -330, -210, -82, 0],
     filter: [
       'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
@@ -3259,8 +3259,8 @@ function getFocusedPhotoReturnMotion(sourceRect) {
     ...initial,
     opacity: 0,
     scale: Math.max(0.24, (initial.scale || 0.34) * 0.9),
-    rotateX: 74,
-    rotateZ: initial.rotateZ || -4,
+    rotateX: 2,
+    rotateZ: initial.rotateZ || -1.2,
     z: -460,
     filter: 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.1))',
   };
