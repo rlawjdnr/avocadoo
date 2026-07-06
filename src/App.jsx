@@ -128,6 +128,10 @@ const screenPushTransition = {
 const defaultScreenPushDistance = 390;
 const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
+const diaryEntryFetchPageSize = 60;
+const listInitialRenderCount = 8;
+const listRenderBatchSize = 8;
+const listLoadMoreThresholdPx = 900;
 const uploadGridColumnCount = 3;
 const storageCacheControlSeconds = '31536000';
 const uploadPhotoMaxDimension = 960;
@@ -219,6 +223,7 @@ const instagramLikeHapticMs = 10;
 const stickerModeHapticMs = 8;
 const listFocusedEntryInset = 96;
 const listWeekAnchorOffset = 120;
+const listPolaroidAutoExpandAnchorRatio = 0.4;
 const stickerStorageKey = 'avocadoo.home.stickers.v1';
 const stickerBaseSize = 100;
 const homeWeekListTop = 63;
@@ -952,6 +957,13 @@ function getMonthKeyForDate(value) {
   return getMonthKey(getMonthStartForDate(value));
 }
 
+function getMonthDateRange(monthStart) {
+  return {
+    start: toDateInputValue(new Date(monthStart.getFullYear(), monthStart.getMonth(), 1)),
+    end: toDateInputValue(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)),
+  };
+}
+
 function normalizeSticker(sticker, fallbackId = '') {
   const option = stickerOptions.find((item) => item.id === sticker?.type) || stickerOptions[1];
   return {
@@ -1208,7 +1220,7 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
     >
       <span className="polaroid-paper">
         <span className="polaroid-image">
-          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={photoTransforms.polaroid} eager={isLast} />}
+          {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={photoTransforms.polaroid} />}
         </span>
       </span>
       {!add && onRemove ? (
@@ -2614,19 +2626,52 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, showDateLabel = false }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, showDateLabel = false, controlledExpanded = null, autoExpanded = false }) {
   const [isStackPressed, setIsStackPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
   const [focusedPhoto, setFocusedPhoto] = useState(null);
   const photoRefs = useRef({});
+  const stackRef = useRef(null);
+  const focusOpenedAtRef = useRef(0);
   const visible = photos.slice(0, maxUploadPhotos);
-  if (visible.length === 0) return null;
+  const isSinglePhoto = visible.length === 1;
+  const StaticPhotoElement = focusEnabled ? 'button' : 'span';
+  const MotionPhotoElement = focusEnabled ? motion.button : motion.span;
   const releasePhotoPress = () => setPressedPhotoIndex(null);
   const releaseStackPress = () => setIsStackPressed(false);
-  const expanded = lockedExpanded || isExpanded;
+  const expanded = isSinglePhoto || lockedExpanded || (controlledExpanded ?? isExpanded);
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
-  const stackInteractionProps = focusEnabled || !toggleEnabled
+
+  useEffect(() => {
+    if (autoExpanded && !isSinglePhoto) setIsExpanded(true);
+  }, [autoExpanded, isSinglePhoto]);
+
+  useEffect(() => {
+    const stack = stackRef.current;
+    if (!focusEnabled || !stack) return undefined;
+
+    function handlePhotoActivation(event) {
+      const photoElement = event.target.closest?.('.large-photo');
+      if (!photoElement || !stack.contains(photoElement)) return;
+      const index = Number(photoElement.dataset.photoIndex);
+      const photo = visible[index];
+      if (!photo) return;
+      event.stopPropagation();
+      focusPhoto(photo, index, getPhotoSourceRect(index));
+    }
+
+    document.addEventListener('click', handlePhotoActivation, true);
+    stack.addEventListener('click', handlePhotoActivation);
+    return () => {
+      document.removeEventListener('click', handlePhotoActivation, true);
+      stack.removeEventListener('click', handlePhotoActivation);
+    };
+  }, [focusEnabled, visible]);
+
+  if (visible.length === 0) return null;
+
+  const stackInteractionProps = focusEnabled || !toggleEnabled || controlledExpanded !== null || isSinglePhoto
     ? {}
     : {
         role: 'button',
@@ -2636,137 +2681,214 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
         onPointerCancel: releaseStackPress,
         onPointerLeave: releaseStackPress,
         onClick: () => {
-          if (!lockedExpanded) setIsExpanded((current) => !current);
+          if (!lockedExpanded && controlledExpanded === null) setIsExpanded((current) => !current);
         },
       };
+  const photoInteractionProps = (photo, index) => ({
+    role: focusEnabled ? 'button' : undefined,
+    tabIndex: focusEnabled ? 0 : undefined,
+    onPointerDown: focusEnabled
+      ? (event) => {
+          event.stopPropagation();
+          setPressedPhotoIndex(index);
+        }
+      : undefined,
+    onPointerUp: focusEnabled
+      ? (event) => {
+          event.stopPropagation();
+          releasePhotoPress();
+        }
+      : undefined,
+    onPointerCancel: focusEnabled ? releasePhotoPress : undefined,
+    onPointerLeave: focusEnabled ? releasePhotoPress : undefined,
+    onClick: focusEnabled
+      ? (event) => {
+          openFocusedPhoto(event, photo, index);
+        }
+      : undefined,
+    onKeyDown: focusEnabled
+      ? (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          focusPhoto(photo, index);
+        }
+      : undefined,
+  });
 
-  function focusPhoto(photo, index) {
-    setFocusedPhoto({ photo, index });
+  function getPhotoSourceRect(index) {
+    const rect = photoRefs.current[index]?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function focusPhoto(photo, index, sourceRect = getPhotoSourceRect(index)) {
+    focusOpenedAtRef.current = Date.now();
+    setFocusedPhoto({ photo, index, sourceRect });
   }
 
   function closeFocusedPhoto() {
+    if (Date.now() - focusOpenedAtRef.current < 280) return;
     setFocusedPhoto(null);
   }
 
   function openFocusedPhoto(event, photo, index) {
     event.stopPropagation();
     releasePhotoPress();
-    focusPhoto(photo, index);
+    focusPhoto(photo, index, getPhotoSourceRect(index));
+  }
+
+  function getFocusedPhotoInitialMotion() {
+    const rect = focusedPhoto?.sourceRect;
+    if (!rect || typeof window === 'undefined') {
+      return { opacity: 0, scale: 0.34, rotateX: 68, rotateZ: -4, z: -420 };
+    }
+
+    const targetWidth = Math.min(window.innerWidth * 0.78, 520);
+    return {
+      opacity: 0,
+      x: rect.left + rect.width / 2 - window.innerWidth / 2,
+      y: rect.top + rect.height / 2 - window.innerHeight / 2 - 24,
+      scale: Math.max(0.28, Math.min(0.5, rect.width / targetWidth)),
+      rotateX: 68,
+      rotateZ: -4,
+      z: -420,
+    };
   }
 
   return (
     <div className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''}`}>
-      <motion.div
-        className={toggleEnabled ? 'large-stack large-stack-clickable' : 'large-stack'}
-        initial={false}
-        animate={{ scale: isStackPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
-        transition={{
-          scale: isStackPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring,
-          width: largePolaroidSpring,
-        }}
-        {...stackInteractionProps}
-      >
-        {visible.map((photo, index) => (
-          <motion.span
+      {isSinglePhoto ? (
+        <div className="large-stack" ref={stackRef}>
+          <StaticPhotoElement
+            type={focusEnabled ? 'button' : undefined}
+            data-photo-index={0}
             ref={(node) => {
               if (node) {
-                photoRefs.current[index] = node;
+                photoRefs.current[0] = node;
               } else {
-                delete photoRefs.current[index];
+                delete photoRefs.current[0];
               }
             }}
-            className={`large-photo large-photo-${index + 1}`}
-            key={`${photo.id || photo}-${index}`}
-            initial={false}
-            animate={
-              expanded
-                ? {
-                    left: index * (largePolaroidWidth + largePolaroidPressedGap),
-                    rotate: 0,
-                    top: 0,
-                    x: 0,
-                    y: 0,
-                    scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
-                  }
-                : {
-                    left: largePolaroidRest[index].left,
-                    rotate: largePolaroidRest[index].rotate,
-                    top: largePolaroidRest[index].top,
-                    x: 0,
-                    y: 0,
-                    scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
-                  }
-            }
-            transition={{
-              left: {
-                ...largePolaroidSpring,
-                delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
-              },
-              top: {
-                ...largePolaroidSpring,
-                delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
-              },
-              rotate: {
-                ...largePolaroidSpring,
-                delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
-              },
-              x: largePolaroidSpring,
-              y: largePolaroidSpring,
-              scale: largePolaroidFocusSpring,
-              delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
-            }}
-            role={focusEnabled ? 'button' : undefined}
-            tabIndex={focusEnabled ? 0 : undefined}
-            onPointerDown={
-              focusEnabled
-                ? (event) => {
-                    event.stopPropagation();
-                    setPressedPhotoIndex(index);
-                  }
-                : undefined
-            }
-            onPointerUp={
-              focusEnabled
-                ? (event) => {
-                    openFocusedPhoto(event, photo, index);
-                  }
-                : undefined
-            }
-            onPointerCancel={focusEnabled ? releasePhotoPress : undefined}
-            onPointerLeave={focusEnabled ? releasePhotoPress : undefined}
-            onClick={
-              focusEnabled
-                ? (event) => {
-                    event.stopPropagation();
-                  }
-                : undefined
-            }
-            onKeyDown={
-              focusEnabled
-                ? (event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    focusPhoto(photo, index);
-                  }
-                : undefined
-            }
+            className="large-photo large-photo-1"
+            style={{ left: 0, top: 0, transform: 'rotate(0deg)' }}
+            {...photoInteractionProps(visible[0], 0)}
           >
-            <PhotoImage photo={photo} transform={photoTransforms.list} eager={index === 0} />
-          </motion.span>
-        ))}
-        {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
-      </motion.div>
+            <PhotoImage photo={visible[0]} transform={photoTransforms.list} />
+          </StaticPhotoElement>
+          {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
+        </div>
+      ) : (
+        <motion.div
+          ref={stackRef}
+          className={toggleEnabled ? 'large-stack large-stack-clickable' : 'large-stack'}
+          initial={false}
+          animate={{ scale: isStackPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
+          transition={{
+            scale: isStackPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring,
+            width: largePolaroidSpring,
+          }}
+          {...stackInteractionProps}
+        >
+          {visible.map((photo, index) => (
+            <MotionPhotoElement
+              type={focusEnabled ? 'button' : undefined}
+              data-photo-index={index}
+              ref={(node) => {
+                if (node) {
+                  photoRefs.current[index] = node;
+                } else {
+                  delete photoRefs.current[index];
+                }
+              }}
+              className={`large-photo large-photo-${index + 1}`}
+              key={`${photo.id || photo}-${index}`}
+              initial={false}
+              animate={
+                expanded
+                  ? {
+                      left: index * (largePolaroidWidth + largePolaroidPressedGap),
+                      rotate: 0,
+                      top: 0,
+                      x: 0,
+                      y: 0,
+                      scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
+                    }
+                  : {
+                      left: largePolaroidRest[index].left,
+                      rotate: largePolaroidRest[index].rotate,
+                      top: largePolaroidRest[index].top,
+                      x: 0,
+                      y: 0,
+                      scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
+                    }
+              }
+              transition={{
+                left: {
+                  ...largePolaroidSpring,
+                  delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
+                },
+                top: {
+                  ...largePolaroidSpring,
+                  delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
+                },
+                rotate: {
+                  ...largePolaroidSpring,
+                  delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
+                },
+                x: largePolaroidSpring,
+                y: largePolaroidSpring,
+                scale: largePolaroidFocusSpring,
+                delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
+              }}
+              {...photoInteractionProps(photo, index)}
+            >
+              <PhotoImage photo={photo} transform={photoTransforms.list} />
+            </MotionPhotoElement>
+          ))}
+          {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
+        </motion.div>
+      )}
       <AnimatePresence>
         {focusEnabled && focusedPhoto && typeof document !== 'undefined'
           ? createPortal(
               <motion.div
                 className="large-photo-focus-layer"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
                 onClick={closeFocusedPhoto}
               >
-                <div className="large-photo-focus-dim" />
-                <div className="large-photo-focused-image" onClick={(event) => event.stopPropagation()}>
-                  <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
-                </div>
+                <motion.div
+                  className="large-photo-focus-dim"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+                />
+                <motion.div
+                  className="large-photo-focused-polaroid"
+                  initial={getFocusedPhotoInitialMotion()}
+                  animate={getFocusedPhotoVerticalFlightPath(focusedPhoto.sourceRect)}
+                  exit={getFocusedPhotoReturnMotion(focusedPhoto.sourceRect)}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 480,
+                    damping: 50,
+                    mass: 1,
+                  }}
+                  style={{ transformPerspective: 1200, transformStyle: 'preserve-3d' }}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <span className="large-photo-focused-frame">
+                    <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
+                  </span>
+                </motion.div>
               </motion.div>,
               document.body,
             )
@@ -2876,13 +2998,13 @@ function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = fals
   );
 }
 
-function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit, itemRef }) {
+function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit, itemRef, autoExpanded = false }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
 
   return (
     <article className="diary-item diary-item-created diary-item-list-card" ref={itemRef}>
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
-      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled autoExpanded={autoExpanded} />
       <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
     </article>
@@ -2902,9 +3024,9 @@ function DiaryDetailCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   );
 }
 
-function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false, itemRef }) {
+function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false, itemRef, autoExpanded = false }) {
   if (!entry) return null;
-  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} />;
+  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} autoExpanded={autoExpanded} />;
 }
 
 function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance }) {
@@ -2923,32 +3045,59 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   );
   const weeksById = useMemo(() => new Map(monthWeeks.map((week) => [week.id, week])), [monthWeeks]);
   const [visibleWeek, setVisibleWeek] = useState(() => weeksById.get(selectedWeek.id) || selectedWeek);
+  const [renderedEntryCount, setRenderedEntryCount] = useState(listInitialRenderCount);
+  const [autoExpandedEntryIds, setAutoExpandedEntryIds] = useState(() => new Set());
   const headerWeek = visibleWeek || selectedWeek;
+  const renderedMonthEntries = monthEntries.slice(0, renderedEntryCount);
 
   useEffect(() => {
     setVisibleWeek(weeksById.get(selectedWeek.id) || selectedWeek);
     focusedWeekRef.current = '';
+    setRenderedEntryCount(listInitialRenderCount);
+    setAutoExpandedEntryIds(new Set());
   }, [selectedWeek.id]);
 
   useEffect(() => {
     setVisibleWeek((current) => weeksById.get(current?.id) || current);
   }, [weeksById]);
 
+  useEffect(() => {
+    setRenderedEntryCount((current) => Math.min(Math.max(current, listInitialRenderCount), Math.max(monthEntries.length, listInitialRenderCount)));
+  }, [monthEntries.length]);
+
   useLayoutEffect(() => {
     if (!active || focusedWeekRef.current === selectedWeek.id) return;
 
     const list = listRef.current;
     const targetEntry = monthEntries.find((entry) => entry.weekId === selectedWeek.id);
+    const targetIndex = targetEntry ? monthEntries.findIndex((entry) => entry.id === targetEntry.id) : -1;
+    if (targetIndex >= renderedEntryCount) {
+      setRenderedEntryCount(Math.min(monthEntries.length, targetIndex + listRenderBatchSize));
+      return;
+    }
+
     const target = targetEntry ? entryRefs.current.get(targetEntry.id) : null;
     if (!list || !target) return;
 
     list.scrollTo({ top: Math.max(0, target.offsetTop - listFocusedEntryInset), behavior: 'auto' });
     focusedWeekRef.current = selectedWeek.id;
-  }, [active, monthEntries, selectedWeek.id]);
+    window.requestAnimationFrame(() => {
+      updateVisibleWeek();
+      updateAutoExpandedEntry();
+    });
+  }, [active, monthEntries, renderedEntryCount, selectedWeek.id]);
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      updateAutoExpandedEntry();
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [active, renderedEntryCount, monthEntries]);
 
   function updateVisibleWeek() {
     const list = listRef.current;
@@ -2971,12 +3120,43 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     setVisibleWeek((current) => (current?.id === nextWeek.id && current?.label === nextWeek.label ? current : nextWeek));
   }
 
+  function updateAutoExpandedEntry() {
+    const list = listRef.current;
+    if (!list || renderedMonthEntries.length === 0) {
+      setAutoExpandedEntryIds((current) => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const listRect = list.getBoundingClientRect();
+    const anchorY = listRect.top + list.clientHeight * listPolaroidAutoExpandAnchorRatio;
+    const anchoredEntry = renderedMonthEntries.find((entry) => {
+      const element = entryRefs.current.get(entry.id);
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.top <= anchorY && rect.bottom >= anchorY;
+    });
+    const nextEntryId = anchoredEntry?.id || null;
+    if (!nextEntryId) return;
+    setAutoExpandedEntryIds((current) => {
+      if (current.has(nextEntryId)) return current;
+      const next = new Set(current);
+      next.add(nextEntryId);
+      return next;
+    });
+  }
+
   function handleListScroll() {
     if (scrollFrameRef.current !== null) return;
 
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       updateVisibleWeek();
+      updateAutoExpandedEntry();
+      const list = listRef.current;
+      if (!list) return;
+      const remainingScroll = list.scrollHeight - list.scrollTop - list.clientHeight;
+      if (remainingScroll > listLoadMoreThresholdPx) return;
+      setRenderedEntryCount((current) => Math.min(monthEntries.length, current + listRenderBatchSize));
     });
   }
 
@@ -2985,13 +3165,14 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader title={headerWeek.range} sub={headerWeek.label} onNavigate={onNavigate} />
       <div className="diary-list" ref={listRef} onScroll={handleListScroll}>
-        {monthEntries.map((entry) => (
+        {renderedMonthEntries.map((entry) => (
           <DiaryItem
             key={entry.id}
             entry={entry}
             onToggleLike={onToggleLike}
             onOpenComments={onOpenComments}
             onEdit={onEditEntry}
+            autoExpanded={autoExpandedEntryIds.has(entry.id)}
             itemRef={(element) => {
               if (element) {
                 entryRefs.current.set(entry.id, element);
@@ -3030,12 +3211,122 @@ function CommentRow({ comment, onToggleCommentLike }) {
   );
 }
 
+function getFocusedPhotoInitialMotion(sourceRect) {
+  if (!sourceRect || typeof window === 'undefined') {
+    return { opacity: 0, scale: 0.34, rotateX: 68, rotateZ: -4, z: -420, filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))' };
+  }
+
+  const targetWidth = Math.min(window.innerWidth * 0.78, 520);
+  return {
+    opacity: 0,
+    x: sourceRect.left + sourceRect.width / 2 - window.innerWidth / 2,
+    y: sourceRect.top + sourceRect.height / 2 - window.innerHeight / 2 - 24,
+    scale: Math.max(0.28, Math.min(0.5, sourceRect.width / targetWidth)),
+    rotateX: 68,
+    rotateZ: -4,
+    z: -420,
+    filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
+  };
+}
+
+function getFocusedPhotoVerticalFlightPath(sourceRect) {
+  const initial = getFocusedPhotoInitialMotion(sourceRect);
+  const startX = initial.x || 0;
+  const startY = initial.y || 0;
+  const verticalSwing = Math.max(44, Math.min(112, Math.abs(startY) * 0.28));
+
+  return {
+    opacity: [initial.opacity ?? 0, 0.88, 1, 1, 1],
+    x: [startX, startX * 0.66, startX * 0.38, startX * 0.14, 0],
+    y: [startY, startY - verticalSwing, startY + verticalSwing * 0.82, startY - verticalSwing * 0.18, 0],
+    scale: [initial.scale || 0.34, 0.48, 0.68, 0.88, 1],
+    rotateX: [initial.rotateX || 68, -34, 22, -7, 0],
+    rotateZ: [initial.rotateZ || -4, -2, 1.4, -0.5, 0],
+    z: [initial.z || -420, -330, -210, -82, 0],
+    filter: [
+      'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
+      'drop-shadow(0 10px 20px rgba(0, 0, 0, 0.16))',
+      'drop-shadow(0 14px 28px rgba(0, 0, 0, 0.22))',
+      'drop-shadow(0 18px 34px rgba(0, 0, 0, 0.26))',
+      'drop-shadow(0 18px 38px rgba(0, 0, 0, 0.28))',
+    ],
+  };
+}
+
+function getFocusedPhotoReturnMotion(sourceRect) {
+  const initial = getFocusedPhotoInitialMotion(sourceRect);
+  return {
+    ...initial,
+    opacity: 0,
+    scale: Math.max(0.24, (initial.scale || 0.34) * 0.9),
+    rotateX: 74,
+    rotateZ: initial.rotateZ || -4,
+    z: -460,
+    filter: 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.1))',
+  };
+}
+
+function PhotoFocusOverlay({ focusedPhoto, onClose }) {
+  if (typeof document === 'undefined') return null;
+
+  function closeFocusedPhoto() {
+    if (!focusedPhoto) return;
+    if (Date.now() - focusedPhoto.openedAt < 280) return;
+    onClose();
+  }
+
+  return createPortal(
+    <AnimatePresence>
+      {focusedPhoto ? (
+        <motion.div
+          className="large-photo-focus-layer"
+          key={`${focusedPhoto.index}-${focusedPhoto.openedAt}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+          onClick={closeFocusedPhoto}
+        >
+          <motion.div
+            className="large-photo-focus-dim"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+          />
+          <motion.div
+            className="large-photo-focused-polaroid"
+            initial={getFocusedPhotoInitialMotion(focusedPhoto.sourceRect)}
+            animate={getFocusedPhotoVerticalFlightPath(focusedPhoto.sourceRect)}
+            exit={getFocusedPhotoReturnMotion(focusedPhoto.sourceRect)}
+            transition={{
+              type: 'spring',
+              stiffness: 480,
+              damping: 50,
+              mass: 1,
+            }}
+            style={{ transformPerspective: 1200, transformStyle: 'preserve-3d' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="large-photo-focused-frame">
+              <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
+            </span>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
+    document.body,
+  );
+}
+
 function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
+  const [focusedPhoto, setFocusedPhoto] = useState(null);
   const replyEditorRef = useRef(null);
+  const detailPhotos = useMemo(() => (entry ? normalizeDiaryEntry(entry).photos.slice(0, maxUploadPhotos) : []), [entry]);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
   useEffect(() => {
@@ -3062,6 +3353,37 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       window.visualViewport?.removeEventListener('scroll', updateKeyboardState);
     };
   }, []);
+
+  useEffect(() => {
+    if (!active || detailPhotos.length === 0) return undefined;
+
+    function openFocusedPhotoFromComment(event) {
+      const photoElement = event.target.closest?.('.comments-screen .large-photo');
+      if (!photoElement) return;
+
+      const index = Number(photoElement.dataset.photoIndex);
+      const photo = detailPhotos[index];
+      if (!photo) return;
+
+      const rect = photoElement.getBoundingClientRect();
+      event.preventDefault();
+      event.stopPropagation();
+      setFocusedPhoto({
+        photo,
+        index,
+        openedAt: Date.now(),
+        sourceRect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+      });
+    }
+
+    document.addEventListener('click', openFocusedPhotoFromComment, true);
+    return () => document.removeEventListener('click', openFocusedPhotoFromComment, true);
+  }, [active, detailPhotos]);
 
   async function submitReply(event) {
     event.preventDefault();
@@ -3137,6 +3459,7 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
           </button>
         </div>
       </form>
+      <PhotoFocusOverlay focusedPhoto={focusedPhoto} onClose={() => setFocusedPhoto(null)} />
     </motion.section>
   );
 }
@@ -3494,17 +3817,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   );
 }
 
-async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
-  if (!hasSupabaseConfig) return readLocalEntries();
-
-  const { data: entryRows, error: entriesError } = await supabase
-    .from('diary_entries')
-    .select('id, author_id, diary_date, location_text, body_text, created_at')
-    .eq('space_id', coupleSpaceId)
-    .order('diary_date', { ascending: false })
-    .order('created_at', { ascending: false });
-
-  if (entriesError) throw entriesError;
+async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) {
   const entries = entryRows || [];
   const entryIds = entries.map((entry) => entry.id);
   if (entryIds.length === 0) return [];
@@ -3592,6 +3905,59 @@ async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
       };
     })
   );
+}
+
+async function fetchDiaryEntries(viewerMemberId = currentMemberId) {
+  if (!hasSupabaseConfig) return readLocalEntries();
+
+  const { data: entryRows, error: entriesError } = await supabase
+    .from('diary_entries')
+    .select('id, author_id, diary_date, location_text, body_text, created_at')
+    .eq('space_id', coupleSpaceId)
+    .order('diary_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(0, diaryEntryFetchPageSize - 1);
+
+  if (entriesError) throw entriesError;
+  return hydrateDiaryEntries(entryRows || [], viewerMemberId);
+}
+
+async function fetchDiaryEntriesForMonth(monthStart, viewerMemberId = currentMemberId) {
+  if (!hasSupabaseConfig) return readLocalEntries().filter((entry) => getMonthKeyForDate(entry.date) === getMonthKey(monthStart));
+
+  const { start, end } = getMonthDateRange(monthStart);
+  const { data: entryRows, error } = await supabase
+    .from('diary_entries')
+    .select('id, author_id, diary_date, location_text, body_text, created_at')
+    .eq('space_id', coupleSpaceId)
+    .gte('diary_date', start)
+    .lt('diary_date', end)
+    .order('diary_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return hydrateDiaryEntries(entryRows || [], viewerMemberId);
+}
+
+async function fetchDiaryEntryById(entryId, viewerMemberId = currentMemberId) {
+  if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) return null;
+
+  const { data: entryRow, error } = await supabase
+    .from('diary_entries')
+    .select('id, author_id, diary_date, location_text, body_text, created_at')
+    .eq('space_id', coupleSpaceId)
+    .eq('id', entryId)
+    .maybeSingle();
+
+  if (error) throw error;
+  const [entry] = await hydrateDiaryEntries(entryRow ? [entryRow] : [], viewerMemberId);
+  return entry || null;
+}
+
+function mergeEntriesById(currentEntries, nextEntries) {
+  const entriesById = new Map(currentEntries.map((entry) => [entry.id, entry]));
+  nextEntries.forEach((entry) => entriesById.set(entry.id, entry));
+  return sortEntriesByDate(Array.from(entriesById.values()));
 }
 
 async function fetchHomeStickers() {
@@ -3904,6 +4270,8 @@ export default function App() {
   const homeEdgeBackSwipeBlocker = useRef({ active: false, startX: 0, startY: 0 });
   const consumedDeepLinkedEntryId = useRef('');
   const consumedDeepLinkedMonthKey = useRef('');
+  const loadedDiaryMonthKeys = useRef(new Set());
+  const pendingDiaryMonthKeys = useRef(new Set());
   const screenTransitionResetTimer = useRef(null);
   const screenTransitionRunId = useRef(0);
   const screenPushDistance = useViewportWidth();
@@ -3945,8 +4313,28 @@ export default function App() {
     }
   }
 
+  async function loadDiaryMonth(monthDate, memberId = selectedMemberId) {
+    if (!hasSupabaseConfig) return;
+    const monthKey = getMonthKey(monthDate);
+    if (loadedDiaryMonthKeys.current.has(monthKey) || pendingDiaryMonthKeys.current.has(monthKey)) return;
+
+    pendingDiaryMonthKeys.current.add(monthKey);
+    try {
+      const monthEntries = await fetchDiaryEntriesForMonth(monthDate, memberId);
+      loadedDiaryMonthKeys.current.add(monthKey);
+      setEntriesAndCache((current) => mergeEntriesById(current, monthEntries));
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error.message || '월별 일기를 불러오지 못했어요.');
+    } finally {
+      pendingDiaryMonthKeys.current.delete(monthKey);
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
+    loadedDiaryMonthKeys.current = new Set();
+    pendingDiaryMonthKeys.current = new Set();
 
     Promise.all([fetchDiaryEntries(selectedMemberId), fetchHomeStickers()])
       .then(([nextEntries, nextStickers]) => {
@@ -3977,6 +4365,11 @@ export default function App() {
       isMounted = false;
     };
   }, [selectedMemberId]);
+
+  useEffect(() => {
+    if (!isInitialDataLoaded) return;
+    void loadDiaryMonth(homeMonth, selectedMemberId);
+  }, [homeMonth, isInitialDataLoaded, selectedMemberId]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -4089,15 +4482,41 @@ export default function App() {
     const entryId = getDeepLinkedEntryId();
     if (!entryId || consumedDeepLinkedEntryId.current === entryId) return;
 
-    const linkedEntry = entries.find((entry) => entry.id === entryId);
-    if (!linkedEntry) return;
+    let isMounted = true;
 
-    consumedDeepLinkedEntryId.current = entryId;
-    setSelectedEntryId(linkedEntry.id);
-    setHomeMonth(getMonthStartForDate(linkedEntry.date));
-    setSelectedWeek(getWeekForEntry(linkedEntry, entries));
-    applyNavigation('comment', { pushHistory: false, animate: false });
-  }, [entries, isInitialDataLoaded]);
+    async function openDeepLinkedEntry() {
+      let linkedEntry = entries.find((entry) => entry.id === entryId);
+
+      if (!linkedEntry && hasSupabaseConfig) {
+        try {
+          linkedEntry = await fetchDiaryEntryById(entryId, selectedMemberId);
+          if (isMounted && linkedEntry) {
+            setEntriesAndCache((current) => mergeEntriesById(current, [linkedEntry]));
+          }
+        } catch (error) {
+          if (isMounted) setLoadError(error.message || '링크된 일기를 불러오지 못했어요.');
+          return;
+        }
+      }
+
+      if (!isMounted || !linkedEntry) {
+        consumedDeepLinkedEntryId.current = entryId;
+        return;
+      }
+
+      consumedDeepLinkedEntryId.current = entryId;
+      setSelectedEntryId(linkedEntry.id);
+      setHomeMonth(getMonthStartForDate(linkedEntry.date));
+      setSelectedWeek(getWeekForEntry(linkedEntry, mergeEntriesById(entries, [linkedEntry])));
+      applyNavigation('comment', { pushHistory: false, animate: false });
+    }
+
+    void openDeepLinkedEntry();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [entries, isInitialDataLoaded, selectedMemberId]);
 
   useEffect(() => {
     const monthKey = getDeepLinkedMonthKey();

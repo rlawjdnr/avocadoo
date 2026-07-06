@@ -1155,9 +1155,12 @@ img {
   display: block;
   width: 161.705px;
   height: 189.473px;
+  border: 0;
+  padding: 0;
   background: #ffffff;
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
   cursor: pointer;
+  font: inherit;
   transform-origin: center;
   will-change: transform;
 }
@@ -1174,12 +1177,17 @@ img {
   width: 142.105px;
   height: 133.938px;
   object-fit: cover;
+  pointer-events: none;
 }
 
 .large-photo-focus-layer {
   position: fixed;
   inset: 0;
   z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  perspective: 1200px;
   pointer-events: auto;
 }
 
@@ -1189,26 +1197,34 @@ img {
   background: rgba(0, 0, 0, 0.48);
 }
 
-.large-photo-focused-image {
-  position: absolute;
-  left: 50%;
-  top: 50%;
+.large-photo-focused-polaroid {
+  position: relative;
   z-index: 2;
-  display: grid;
-  place-items: center;
-  width: min(88vw, 680px);
-  max-height: 82vh;
-  overflow: hidden;
-  transform: translate(-50%, -50%);
+  width: min(78vw, 520px);
+  aspect-ratio: 161.705 / 189.473;
+  padding: min(4.75vw, 31px) min(4.75vw, 31px) min(22.5vw, 145px);
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  box-sizing: border-box;
+  transform-origin: 50% 8%;
+  transform-style: preserve-3d;
   pointer-events: auto;
+  will-change: transform, opacity;
 }
 
-.large-photo-focused-image img {
+.large-photo-focused-frame {
+  position: relative;
+  display: block;
   width: 100%;
-  height: auto;
-  max-height: 82vh;
-  object-fit: contain;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  height: 100%;
+  overflow: hidden;
+}
+
+.large-photo-focused-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .large-photo-1 {
