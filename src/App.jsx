@@ -2790,10 +2790,17 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       return { x: 0, y: 0, scale: 2.1 };
     }
 
-    const targetWidth = Math.min(window.innerWidth * 0.78, 520);
+    const viewport = window.visualViewport;
+    const viewportWidth = viewport?.width || window.innerWidth;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const viewportLeft = viewport?.offsetLeft || 0;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportCenterX = viewportLeft + viewportWidth / 2;
+    const viewportCenterY = viewportTop + viewportHeight / 2 - 24;
+    const targetWidth = Math.min(viewportWidth * 0.78, 520);
     return {
-      x: window.innerWidth / 2 - (rect.left + rect.width / 2),
-      y: window.innerHeight / 2 - 24 - (rect.top + rect.height / 2),
+      x: viewportCenterX - (rect.left + rect.width / 2),
+      y: viewportCenterY - (rect.top + rect.height / 2),
       scale: targetWidth / Math.max(rect.width, 1),
     };
   }
