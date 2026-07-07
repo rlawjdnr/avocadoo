@@ -530,13 +530,17 @@ function getMonthIndex(months, monthDate) {
   return Math.max(0, months.findIndex((month) => month.key === monthKey));
 }
 
-function getHomeRenderableMonthIndexes(activeMonthIndex, monthCount) {
+function getHomeRenderableMonthIndexes(renderedMonthIndex, monthCount, activeMonthIndex = renderedMonthIndex) {
   const indexes = new Set();
-  const firstIndex = Math.max(0, activeMonthIndex - 1);
-  const lastIndex = Math.min(monthCount - 1, activeMonthIndex + 1);
+  const firstIndex = Math.max(0, renderedMonthIndex - 1);
+  const lastIndex = Math.min(monthCount - 1, renderedMonthIndex + 1);
 
   for (let index = firstIndex; index <= lastIndex; index += 1) {
     indexes.add(index);
+  }
+
+  if (activeMonthIndex >= 0 && activeMonthIndex < monthCount) {
+    indexes.add(activeMonthIndex);
   }
 
   return indexes;
@@ -1916,8 +1920,10 @@ function Home({
   const [monthScrollTops, setMonthScrollTops] = useState({});
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
+  const activeMonthIndexRef = useRef(activeMonthIndex);
+  const [renderedMonthIndex, setRenderedMonthIndex] = useState(activeMonthIndex);
   const activeMonthDate = monthPages[activeMonthIndex]?.date || monthDate;
-  const renderableMonthIndexes = useMemo(() => getHomeRenderableMonthIndexes(activeMonthIndex, monthPages.length), [activeMonthIndex, monthPages.length]);
+  const renderableMonthIndexes = useMemo(() => getHomeRenderableMonthIndexes(renderedMonthIndex, monthPages.length, activeMonthIndex), [activeMonthIndex, renderedMonthIndex, monthPages.length]);
   const monthWeeksByKey = useMemo(() => {
     const nextMonthWeeks = new Map();
 
@@ -1932,6 +1938,10 @@ function Home({
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
+
+  useEffect(() => {
+    activeMonthIndexRef.current = activeMonthIndex;
+  }, [activeMonthIndex]);
 
   useEffect(() => {
     editingStickersRef.current = editingStickers;
@@ -2075,42 +2085,39 @@ function Home({
   }
 
   function resetMonthTrack(viewport) {
-    setMonthTrackPosition(-activeMonthIndex * getMonthPageWidth(viewport));
+    setMonthTrackPosition(-activeMonthIndexRef.current * getMonthPageWidth(viewport));
   }
 
   function snapMonthBack(viewport) {
-    animateMonthTrack(-activeMonthIndex * getMonthPageWidth(viewport));
+    animateMonthTrack(-activeMonthIndexRef.current * getMonthPageWidth(viewport));
   }
 
   function commitMonthChange(nextMonthIndex) {
     const nextMonthDate = monthPages[nextMonthIndex].date;
+    activeMonthIndexRef.current = nextMonthIndex;
     setActiveMonthIndex(nextMonthIndex);
     onChangeMonth(nextMonthDate);
   }
 
   function moveToMonth(nextMonthIndex, viewport, animated = true) {
+    const currentMonthIndex = activeMonthIndexRef.current;
     const clampedIndex = Math.min(Math.max(nextMonthIndex, 0), monthPages.length - 1);
     const targetTrackX = -clampedIndex * getMonthPageWidth(viewport);
-    const canDeferMonthCommit = animated && Math.abs(clampedIndex - activeMonthIndex) === 1;
 
-    if (clampedIndex === activeMonthIndex) {
+    if (clampedIndex === currentMonthIndex) {
       if (animated) snapMonthBack(viewport);
       else setMonthTrackPosition(targetTrackX);
       return;
     }
 
-    if (animated) {
-      if (canDeferMonthCommit) {
-        animateMonthTrack(targetTrackX, () => commitMonthChange(clampedIndex));
-        return;
-      }
+    commitMonthChange(clampedIndex);
 
-      commitMonthChange(clampedIndex);
-      animateMonthTrack(targetTrackX);
+    if (animated) {
+      animateMonthTrack(targetTrackX, () => setRenderedMonthIndex(clampedIndex));
       return;
     }
 
-    commitMonthChange(clampedIndex);
+    setRenderedMonthIndex(clampedIndex);
     setMonthTrackPosition(targetTrackX);
   }
 
@@ -2194,7 +2201,7 @@ function Home({
     const isValidSwipe = isHorizontalSwipe && (isDistanceSwipe || isFastSwipe);
 
     if (isValidSwipe) {
-      moveToMonth(activeMonthIndex + (deltaX < 0 ? 1 : -1), viewport);
+      moveToMonth(activeMonthIndexRef.current + (deltaX < 0 ? 1 : -1), viewport);
     } else {
       snapMonthBack(viewport);
     }
@@ -2220,7 +2227,7 @@ function Home({
 
   useEffect(() => {
     const nextMonthIndex = getMonthIndex(monthPages, monthDate);
-    if (nextMonthIndex === activeMonthIndex) return;
+    if (nextMonthIndex === activeMonthIndexRef.current) return;
     moveToMonth(nextMonthIndex, monthViewportRef.current, false);
   }, [monthDate, monthPages]);
 
