@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
@@ -2652,7 +2653,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
   const [focusedPhoto, setFocusedPhoto] = useState(null);
   const [returningPhotoIndex, setReturningPhotoIndex] = useState(null);
-  const [returningPhotoRect, setReturningPhotoRect] = useState(null);
   const photoRefs = useRef({});
   const stackRef = useRef(null);
   const focusOpenedAtRef = useRef(0);
@@ -2769,7 +2769,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function focusPhoto(photo, index, sourceRect = getPhotoSourceRect(index)) {
     if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
     setReturningPhotoIndex(null);
-    setReturningPhotoRect(null);
     focusOpenedAtRef.current = Date.now();
     setFocusedPhoto({ photo, index, sourceRect, target: getFocusedPhotoTargetTransform(sourceRect) });
   }
@@ -2777,12 +2776,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function closeFocusedPhoto() {
     if (Date.now() - focusOpenedAtRef.current < 280) return;
     setReturningPhotoIndex(focusedPhoto?.index ?? null);
-    setReturningPhotoRect(focusedPhoto?.sourceRect || null);
     setFocusedPhoto(null);
-    returningPhotoTimerRef.current = window.setTimeout(() => {
-      setReturningPhotoIndex(null);
-      setReturningPhotoRect(null);
-    }, 460);
+    returningPhotoTimerRef.current = window.setTimeout(() => setReturningPhotoIndex(null), 520);
   }
 
   function openFocusedPhoto(event, photo, index) {
@@ -2812,58 +2807,56 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   }
 
   function getPhotoMotion(index, baseMotion) {
-    const isFocused = focusEnabled && focusedPhoto?.index === index;
-    const isReturning = focusEnabled && returningPhotoIndex === index;
-
-    if (isFocused) {
-      return {
-        x: focusedPhoto.target.x,
-        y: focusedPhoto.target.y,
-        scale: focusedPhoto.target.scale,
-        rotate: 0,
-        rotateX: [focusedPolaroidTiltX, 18, 0],
-        z: [focusedPolaroidSourceDepth, -120, 0],
-        zIndex: 1200,
-        filter: 'drop-shadow(0 18px 38px rgba(0, 0, 0, 0.28))',
-      };
-    }
-
-    if (isReturning) {
-      return {
-        x: 0,
-        y: 0,
-        scale: 1,
-        rotateX: [focusedPolaroidTiltX, 16, 0],
-        z: [focusedPolaroidSourceDepth, -90, 0],
-        zIndex: 1200,
-        filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
-      };
-    }
-
     return baseMotion;
   }
 
   function getPhotoZIndex(index) {
-    if (focusEnabled && (focusedPhoto?.index === index || returningPhotoIndex === index)) return 1200;
     return 1;
   }
 
   function getPhotoStyle(index, baseStyle = {}) {
-    const rect = focusedPhoto?.index === index ? focusedPhoto.sourceRect : returningPhotoIndex === index ? returningPhotoRect : null;
-    if (!focusEnabled || !rect) {
-      return { ...baseStyle, zIndex: getPhotoZIndex(index), transformPerspective: 1000, transformStyle: 'preserve-3d' };
-    }
-
+    const isFocusProxyActive = focusEnabled && (focusedPhoto?.index === index || returningPhotoIndex === index);
     return {
       ...baseStyle,
-      position: 'fixed',
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
       zIndex: getPhotoZIndex(index),
+      opacity: isFocusProxyActive ? 0 : 1,
       transformPerspective: 1000,
       transformStyle: 'preserve-3d',
+    };
+  }
+
+  function getFocusedPhotoProxyInitial(photoState) {
+    return {
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotate: 0,
+      rotateX: focusedPolaroidTiltX,
+      z: focusedPolaroidSourceDepth,
+      filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
+    };
+  }
+
+  function getFocusedPhotoProxyAnimate(photoState) {
+    return {
+      x: photoState.target.x,
+      y: photoState.target.y,
+      scale: photoState.target.scale,
+      rotate: 0,
+      rotateX: [focusedPolaroidTiltX, 18, 0],
+      z: [focusedPolaroidSourceDepth, -120, 0],
+      filter: 'drop-shadow(0 18px 38px rgba(0, 0, 0, 0.28))',
+    };
+  }
+
+  function getFocusedPhotoProxyExit() {
+    return {
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotateX: [focusedPolaroidTiltX, 16, 0],
+      z: [focusedPolaroidSourceDepth, -90, 0],
+      filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
     };
   }
 
@@ -2974,26 +2967,60 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
           {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
         </motion.div>
       )}
-      <AnimatePresence>
-        {focusEnabled && focusedPhoto ? (
-            <motion.div
-              className="large-photo-focus-layer large-photo-focus-layer-dim-only"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
-              onClick={closeFocusedPhoto}
-            >
-              <motion.div
-                className="large-photo-focus-dim"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
-              />
-            </motion.div>
-          ) : null}
-      </AnimatePresence>
+      {focusEnabled && typeof document !== 'undefined'
+        ? createPortal(
+            <Fragment>
+              <AnimatePresence>
+                {focusedPhoto ? (
+                  <motion.div
+                    key="focused-photo-dim"
+                    className="large-photo-focus-layer large-photo-focus-layer-dim-only"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+                    onClick={closeFocusedPhoto}
+                  >
+                    <motion.div
+                      className="large-photo-focus-dim"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+                    />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+              <AnimatePresence>
+                {focusedPhoto ? (
+                  <motion.button
+                    key={`focused-photo-proxy-${focusedPhoto.index}`}
+                    type="button"
+                    className="large-photo large-photo-focused-proxy"
+                    initial={getFocusedPhotoProxyInitial(focusedPhoto)}
+                    animate={getFocusedPhotoProxyAnimate(focusedPhoto)}
+                    exit={getFocusedPhotoProxyExit()}
+                    transition={focusedPolaroidLayoutTransition}
+                    style={{
+                      position: 'fixed',
+                      left: focusedPhoto.sourceRect?.left || 0,
+                      top: focusedPhoto.sourceRect?.top || 0,
+                      width: focusedPhoto.sourceRect?.width || largePolaroidWidth,
+                      height: focusedPhoto.sourceRect?.height || 189.473,
+                      zIndex: 1200,
+                      transformPerspective: 1000,
+                      transformStyle: 'preserve-3d',
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+            </Fragment>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
