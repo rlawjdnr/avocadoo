@@ -2652,6 +2652,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
   const [focusedPhoto, setFocusedPhoto] = useState(null);
   const [returningPhotoIndex, setReturningPhotoIndex] = useState(null);
+  const [returningPhotoRect, setReturningPhotoRect] = useState(null);
   const photoRefs = useRef({});
   const stackRef = useRef(null);
   const focusOpenedAtRef = useRef(0);
@@ -2768,6 +2769,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function focusPhoto(photo, index, sourceRect = getPhotoSourceRect(index)) {
     if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
     setReturningPhotoIndex(null);
+    setReturningPhotoRect(null);
     focusOpenedAtRef.current = Date.now();
     setFocusedPhoto({ photo, index, sourceRect, target: getFocusedPhotoTargetTransform(sourceRect) });
   }
@@ -2775,8 +2777,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function closeFocusedPhoto() {
     if (Date.now() - focusOpenedAtRef.current < 280) return;
     setReturningPhotoIndex(focusedPhoto?.index ?? null);
+    setReturningPhotoRect(focusedPhoto?.sourceRect || null);
     setFocusedPhoto(null);
-    returningPhotoTimerRef.current = window.setTimeout(() => setReturningPhotoIndex(null), 460);
+    returningPhotoTimerRef.current = window.setTimeout(() => {
+      setReturningPhotoIndex(null);
+      setReturningPhotoRect(null);
+    }, 460);
   }
 
   function openFocusedPhoto(event, photo, index) {
@@ -2810,8 +2816,10 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     const isReturning = focusEnabled && returningPhotoIndex === index;
 
     if (isFocused) {
+      const rect = focusedPhoto.sourceRect;
       return {
-        ...baseMotion,
+        left: rect?.left ?? baseMotion.left,
+        top: rect?.top ?? baseMotion.top,
         x: focusedPhoto.target.x,
         y: focusedPhoto.target.y,
         scale: focusedPhoto.target.scale,
@@ -2825,7 +2833,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
 
     if (isReturning) {
       return {
-        ...baseMotion,
+        left: returningPhotoRect?.left ?? baseMotion.left,
+        top: returningPhotoRect?.top ?? baseMotion.top,
         x: 0,
         y: 0,
         scale: 1,
@@ -2842,6 +2851,25 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function getPhotoZIndex(index) {
     if (focusEnabled && (focusedPhoto?.index === index || returningPhotoIndex === index)) return 1200;
     return 1;
+  }
+
+  function getPhotoStyle(index, baseStyle = {}) {
+    const rect = focusedPhoto?.index === index ? focusedPhoto.sourceRect : returningPhotoIndex === index ? returningPhotoRect : null;
+    if (!focusEnabled || !rect) {
+      return { ...baseStyle, zIndex: getPhotoZIndex(index), transformPerspective: 1000, transformStyle: 'preserve-3d' };
+    }
+
+    return {
+      ...baseStyle,
+      position: 'fixed',
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      zIndex: getPhotoZIndex(index),
+      transformPerspective: 1000,
+      transformStyle: 'preserve-3d',
+    };
   }
 
   return (
@@ -2861,7 +2889,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
             className="large-photo large-photo-1"
             animate={focusEnabled ? getPhotoMotion(0, { x: 0, y: 0, scale: pressedPhotoIndex === 0 ? 0.97 : 1, rotate: 0, rotateX: 0, z: 0, zIndex: getPhotoZIndex(0), filter: 'drop-shadow(0 0 0 rgba(0, 0, 0, 0))' }) : undefined}
             transition={focusedPolaroidLayoutTransition}
-            style={{ left: 0, top: 0, transform: 'rotate(0deg)', zIndex: getPhotoZIndex(0), transformPerspective: 1000, transformStyle: 'preserve-3d' }}
+            style={getPhotoStyle(0, { left: 0, top: 0, transform: 'rotate(0deg)' })}
             {...photoInteractionProps(visible[0], 0)}
           >
             <PhotoImage photo={visible[0]} transform={photoTransforms.list} />
@@ -2942,7 +2970,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 zIndex: { duration: 0 },
                 delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
               }}
-              style={{ transformPerspective: 1000, transformStyle: 'preserve-3d' }}
+              style={getPhotoStyle(index)}
               {...photoInteractionProps(photo, index)}
             >
               <PhotoImage photo={photo} transform={photoTransforms.list} />
