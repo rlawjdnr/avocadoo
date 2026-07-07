@@ -2703,6 +2703,17 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   }, [expanded, focusedPhoto, returningPhotoIndex]);
 
   useEffect(() => {
+    if (!focusEnabled || focusedPhoto?.phase !== 'closing' || typeof document === 'undefined') return undefined;
+
+    function handleCapturedScroll() {
+      finishFocusedPhotoReturn();
+    }
+
+    document.addEventListener('scroll', handleCapturedScroll, true);
+    return () => document.removeEventListener('scroll', handleCapturedScroll, true);
+  }, [focusEnabled, focusedPhoto?.phase]);
+
+  useEffect(() => {
     const stack = stackRef.current;
     if (!focusEnabled || !stack) return undefined;
 
@@ -3023,13 +3034,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     style={{ pointerEvents: focusedPhoto.phase === 'closing' ? 'none' : 'auto' }}
                     onClick={closeFocusedPhoto}
                   >
-                    <motion.div
-                      className="large-photo-focus-dim"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: focusedPhoto.phase === 'closing' ? 0 : 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: focusedPhoto.phase === 'closing' ? 0.12 : 0.18, ease: [0, 0, 0.2, 1] }}
-                    />
+                    <div className="large-photo-focus-dim" />
                   </motion.div>
                 ) : null}
               </AnimatePresence>
