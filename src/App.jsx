@@ -219,10 +219,7 @@ const focusedPolaroidReturnSpring = {
   damping: 55,
 };
 
-const focusedPolaroidTiltX = 52;
-const focusedPolaroidSourceDepth = -340;
 const focusedPolaroidOriginYRatio = 0.08;
-const focusedPolaroidReturnSettleOffset = 24;
 const focusedPolaroidRestShadow = '-1px 0 2px 1px rgba(0, 0, 0, 0.09)';
 const focusedPolaroidLiftShadow = '0 20px 42px rgba(0, 0, 0, 0.26)';
 
@@ -231,17 +228,11 @@ const focusedPolaroidLayoutTransition = {
   y: focusedPolaroidSpring,
   scale: focusedPolaroidSpring,
   rotate: focusedPolaroidSpring,
-  rotateX: focusedPolaroidSpring,
-  z: focusedPolaroidSpring,
   opacity: { duration: 0.08, ease: 'linear' },
 };
 
 const focusedPolaroidShadowTransition = {
   opacity: { duration: 0.38, ease: [0, 0, 0.2, 1] },
-};
-
-const focusedPolaroidReturnSettleTransition = {
-  y: { ...focusedPolaroidSpring, delay: 0.16 },
 };
 
 const focusedPolaroidReturnTransition = {
@@ -250,8 +241,6 @@ const focusedPolaroidReturnTransition = {
   y: focusedPolaroidReturnSpring,
   scale: focusedPolaroidReturnSpring,
   rotate: focusedPolaroidReturnSpring,
-  rotateX: focusedPolaroidReturnSpring,
-  z: focusedPolaroidReturnSpring,
 };
 
 const coveredPageTransition = {
@@ -2875,8 +2864,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       ...baseStyle,
       zIndex: getPhotoZIndex(index),
       opacity: isFocusProxyActive ? 0 : 1,
-      transformPerspective: 1000,
-      transformStyle: 'preserve-3d',
     };
   }
 
@@ -2886,8 +2873,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       y: 0,
       scale: 1,
       rotate: 0,
-      rotateX: focusedPolaroidTiltX,
-      z: focusedPolaroidSourceDepth,
     };
   }
 
@@ -2901,24 +2886,16 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       y: photoState.target.y,
       scale: photoState.target.scale,
       rotate: 0,
-      rotateX: [focusedPolaroidTiltX, 18, 0],
-      z: [focusedPolaroidSourceDepth, -120, 0],
     };
   }
 
   function getFocusedPhotoProxyExit() {
     return {
       x: 0,
-      y: focusedPolaroidReturnSettleOffset,
+      y: 0,
       scale: 1,
-      rotateX: [focusedPolaroidTiltX, 16, 0],
-      z: [focusedPolaroidSourceDepth, -90, 0],
+      rotate: 0,
     };
-  }
-
-  function getFocusedPhotoPaperY(photoState) {
-    if (photoState.phase === 'closing') return -focusedPolaroidReturnSettleOffset;
-    return 0;
   }
 
   function getFocusedPhotoShadowOpacity(photoState) {
@@ -2945,7 +2922,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               }
             }}
             className="large-photo large-photo-1"
-            animate={focusEnabled ? getPhotoMotion(0, { x: 0, y: 0, scale: pressedPhotoIndex === 0 ? 0.97 : 1, rotate: 0, rotateX: 0, z: 0, zIndex: getPhotoZIndex(0), boxShadow: focusedPolaroidRestShadow }) : undefined}
+            animate={focusEnabled ? getPhotoMotion(0, { x: 0, y: 0, scale: pressedPhotoIndex === 0 ? 0.97 : 1, rotate: 0, zIndex: getPhotoZIndex(0), boxShadow: focusedPolaroidRestShadow }) : undefined}
             transition={focusedPolaroidLayoutTransition}
             style={getPhotoStyle(0, { left: 0, top: 0, transform: 'rotate(0deg)' })}
             {...photoInteractionProps(visible[0], 0)}
@@ -2989,8 +2966,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       x: 0,
                       y: 0,
                       scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
-                      rotateX: 0,
-                      z: 0,
                       zIndex: getPhotoZIndex(index),
                       boxShadow: focusedPolaroidRestShadow,
                     })
@@ -3001,8 +2976,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       x: 0,
                       y: 0,
                       scale: focusEnabled && pressedPhotoIndex === index ? 0.97 : 1,
-                      rotateX: 0,
-                      z: 0,
                       zIndex: getPhotoZIndex(index),
                       boxShadow: focusedPolaroidRestShadow,
                     })
@@ -3023,8 +2996,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 x: largePolaroidSpring,
                 y: largePolaroidSpring,
                 scale: largePolaroidFocusSpring,
-                rotateX: focusedPolaroidSpring,
-                z: focusedPolaroidSpring,
                 zIndex: { duration: 0 },
                 delay: expanded ? 0 : (visible.length - 1 - index) * largePolaroidStaggerDelay,
               }}
@@ -3078,17 +3049,10 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       width: focusedPhoto.sourceRect?.width || largePolaroidWidth,
                       height: focusedPhoto.sourceRect?.height || 189.473,
                       zIndex: 1200,
-                      transformPerspective: 1000,
-                      transformStyle: 'preserve-3d',
                     }}
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <motion.div
-                      className="large-photo-focused-content"
-                      initial={{ y: 0 }}
-                      animate={{ y: getFocusedPhotoPaperY(focusedPhoto) }}
-                      transition={focusedPhoto.phase === 'closing' ? focusedPolaroidReturnSettleTransition : focusedPolaroidLayoutTransition}
-                    >
+                    <div className="large-photo-focused-content">
                       <motion.div
                         className="large-photo-focused-shadow"
                         initial={{ opacity: 0 }}
@@ -3096,7 +3060,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                         transition={focusedPolaroidShadowTransition}
                       />
                       <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
-                    </motion.div>
+                    </div>
                   </motion.button>
                 ) : null}
               </AnimatePresence>

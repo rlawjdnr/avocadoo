@@ -1162,7 +1162,6 @@ img {
   cursor: pointer;
   font: inherit;
   transform-origin: 50% 8%;
-  transform-style: preserve-3d;
   will-change: transform;
 }
 
@@ -1194,7 +1193,6 @@ img {
   z-index: 1;
   background: #ffffff;
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
-  transform-style: preserve-3d;
   will-change: transform;
 }
 
@@ -1242,7 +1240,6 @@ img {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
   box-sizing: border-box;
   transform-origin: 50% 8%;
-  transform-style: preserve-3d;
   pointer-events: auto;
   will-change: transform, opacity;
 }
