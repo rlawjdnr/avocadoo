@@ -3030,15 +3030,14 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
         ? createPortal(
             <Fragment>
               <AnimatePresence>
-                {focusedPhoto ? (
+                {focusedPhoto && focusedPhoto.phase !== 'closing' ? (
                   <motion.div
                     key="focused-photo-dim"
                     className="large-photo-focus-layer large-photo-focus-layer-dim-only"
                     initial={{ opacity: 0 }}
-                    animate={{ opacity: focusedPhoto.phase === 'closing' ? 0 : 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: focusedPhoto.phase === 'closing' ? 0.12 : 0.18, ease: [0, 0, 0.2, 1] }}
-                    style={{ pointerEvents: focusedPhoto.phase === 'closing' ? 'none' : 'auto' }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, transition: { duration: 0.12, ease: [0, 0, 0.2, 1] } }}
+                    transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
                     onClick={closeFocusedPhoto}
                   >
                     <div className="large-photo-focus-dim" />
@@ -3061,6 +3060,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       width: focusedPhoto.sourceRect?.width || largePolaroidWidth,
                       height: focusedPhoto.sourceRect?.height || 189.473,
                       zIndex: 1200,
+                      pointerEvents: focusedPhoto.phase === 'closing' ? 'none' : 'auto',
                     }}
                     onClick={(event) => event.stopPropagation()}
                   >
@@ -5046,6 +5046,19 @@ export default function App() {
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
   const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    document.body.classList.toggle('splash-active', showSplash);
+    themeColorMeta?.setAttribute('content', showSplash ? '#ffffff' : '#FAF9F7');
+
+    return () => {
+      document.body.classList.remove('splash-active');
+      themeColorMeta?.setAttribute('content', '#FAF9F7');
+    };
+  }, [showSplash]);
 
   return (
     <div className="screen-stage">
