@@ -2816,10 +2816,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     const isReturning = focusEnabled && returningPhotoIndex === index;
 
     if (isFocused) {
-      const rect = focusedPhoto.sourceRect;
       return {
-        left: rect?.left ?? baseMotion.left,
-        top: rect?.top ?? baseMotion.top,
         x: focusedPhoto.target.x,
         y: focusedPhoto.target.y,
         scale: focusedPhoto.target.scale,
@@ -2833,8 +2830,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
 
     if (isReturning) {
       return {
-        left: returningPhotoRect?.left ?? baseMotion.left,
-        top: returningPhotoRect?.top ?? baseMotion.top,
         x: 0,
         y: 0,
         scale: 1,
