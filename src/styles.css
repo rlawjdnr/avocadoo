@@ -1133,6 +1133,20 @@ img {
   padding: 0 28px;
 }
 
+.large-stack-scroll-focus-active,
+.comments-screen .diary-item-detail .large-stack-scroll-focus-active {
+  overflow: visible !important;
+}
+
+.large-photo-target-focus-active .screen-stage,
+.large-photo-target-focus-active .phone,
+.large-photo-target-focus-active .comments-screen,
+.large-photo-target-focus-active .diary-item-detail,
+.large-photo-target-focus-active .large-stack,
+.large-photo-target-focus-active .comment-thread {
+  overflow: visible !important;
+}
+
 .large-stack {
   position: relative;
   width: 180px;
@@ -1161,7 +1175,8 @@ img {
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
   cursor: pointer;
   font: inherit;
-  transform-origin: center;
+  transform-origin: 50% 8%;
+  transform-style: preserve-3d;
   will-change: transform;
 }
 
@@ -1183,12 +1198,16 @@ img {
 .large-photo-focus-layer {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 800;
   display: grid;
   place-items: center;
   padding: 28px;
   perspective: 1200px;
   pointer-events: auto;
+}
+
+.large-photo-focus-layer-dim-only {
+  z-index: 800;
 }
 
 .large-photo-focus-dim {
