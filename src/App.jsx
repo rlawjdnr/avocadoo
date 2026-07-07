@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 
@@ -2945,12 +2944,13 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
           {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
         </motion.div>
       )}
-      {focusEnabled && focusedPhoto && typeof document !== 'undefined'
-        ? createPortal(
+      <AnimatePresence>
+        {focusEnabled && focusedPhoto ? (
             <motion.div
               className="large-photo-focus-layer large-photo-focus-layer-dim-only"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
               onClick={closeFocusedPhoto}
             >
@@ -2958,12 +2958,12 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                 className="large-photo-focus-dim"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
               />
-            </motion.div>,
-            document.body,
-          )
-        : null}
+            </motion.div>
+          ) : null}
+      </AnimatePresence>
     </div>
   );
 }

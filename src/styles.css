@@ -1198,7 +1198,7 @@ img {
 .large-photo-focus-layer {
   position: fixed;
   inset: 0;
-  z-index: 800;
+  z-index: 1000;
   display: grid;
   place-items: center;
   padding: 28px;
@@ -1207,7 +1207,7 @@ img {
 }
 
 .large-photo-focus-layer-dim-only {
-  z-index: 800;
+  z-index: 1000;
 }
 
 .large-photo-focus-dim {
