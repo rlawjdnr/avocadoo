@@ -209,13 +209,22 @@ const largePolaroidFocusSpring = {
 
 const focusedPolaroidSpring = {
   type: 'spring',
-  stiffness: 1320,
-  damping: 42,
-  mass: 0.38,
+  stiffness: 480,
+  damping: 50,
+};
+
+const focusedPolaroidReturnSpring = {
+  type: 'spring',
+  stiffness: 800,
+  damping: 55,
 };
 
 const focusedPolaroidTiltX = 52;
 const focusedPolaroidSourceDepth = -340;
+const focusedPolaroidOriginYRatio = 0.08;
+const focusedPolaroidReturnSettleOffset = 24;
+const focusedPolaroidRestShadow = '-1px 0 2px 1px rgba(0, 0, 0, 0.09)';
+const focusedPolaroidLiftShadow = '0 20px 42px rgba(0, 0, 0, 0.26)';
 
 const focusedPolaroidLayoutTransition = {
   x: focusedPolaroidSpring,
@@ -224,8 +233,25 @@ const focusedPolaroidLayoutTransition = {
   rotate: focusedPolaroidSpring,
   rotateX: focusedPolaroidSpring,
   z: focusedPolaroidSpring,
-  filter: { duration: 0.14, ease: 'linear' },
   opacity: { duration: 0.08, ease: 'linear' },
+};
+
+const focusedPolaroidShadowTransition = {
+  opacity: { duration: 0.38, ease: [0, 0, 0.2, 1] },
+};
+
+const focusedPolaroidReturnSettleTransition = {
+  y: { ...focusedPolaroidSpring, delay: 0.16 },
+};
+
+const focusedPolaroidReturnTransition = {
+  ...focusedPolaroidLayoutTransition,
+  x: focusedPolaroidReturnSpring,
+  y: focusedPolaroidReturnSpring,
+  scale: focusedPolaroidReturnSpring,
+  rotate: focusedPolaroidReturnSpring,
+  rotateX: focusedPolaroidReturnSpring,
+  z: focusedPolaroidReturnSpring,
 };
 
 const coveredPageTransition = {
@@ -2655,8 +2681,10 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const [returningPhotoIndex, setReturningPhotoIndex] = useState(null);
   const photoRefs = useRef({});
   const stackRef = useRef(null);
+  const scrollRef = useRef(null);
   const focusOpenedAtRef = useRef(0);
   const returningPhotoTimerRef = useRef(null);
+  const horizontalScrollLeftRef = useRef(0);
   const visible = photos.slice(0, maxUploadPhotos);
   const isSinglePhoto = visible.length === 1;
   const StaticPhotoElement = focusEnabled ? motion.button : 'span';
@@ -2680,6 +2708,10 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     document.body.classList.toggle('large-photo-target-focus-active', Boolean(isFocusActive));
     return () => document.body.classList.remove('large-photo-target-focus-active');
   }, [focusEnabled, focusedPhoto, returningPhotoIndex]);
+
+  useEffect(() => {
+    horizontalScrollLeftRef.current = scrollRef.current?.scrollLeft || 0;
+  }, [expanded, focusedPhoto, returningPhotoIndex]);
 
   useEffect(() => {
     const stack = stackRef.current;
@@ -2770,14 +2802,33 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
     setReturningPhotoIndex(null);
     focusOpenedAtRef.current = Date.now();
-    setFocusedPhoto({ photo, index, sourceRect, target: getFocusedPhotoTargetTransform(sourceRect) });
+    setFocusedPhoto({ photo, index, sourceRect, target: getFocusedPhotoTargetTransform(sourceRect), phase: 'open' });
   }
 
   function closeFocusedPhoto() {
+    if (!focusedPhoto || focusedPhoto.phase === 'closing') return;
     if (Date.now() - focusOpenedAtRef.current < 280) return;
-    setReturningPhotoIndex(focusedPhoto?.index ?? null);
+    setReturningPhotoIndex(focusedPhoto.index);
+    setFocusedPhoto((current) => (current ? { ...current, phase: 'closing' } : current));
+    returningPhotoTimerRef.current = window.setTimeout(() => {
+      setFocusedPhoto(null);
+      setReturningPhotoIndex(null);
+    }, 1150);
+  }
+
+  function finishFocusedPhotoReturn() {
+    if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
     setFocusedPhoto(null);
-    returningPhotoTimerRef.current = window.setTimeout(() => setReturningPhotoIndex(null), 520);
+    setReturningPhotoIndex(null);
+  }
+
+  function handleStackHorizontalScroll(event) {
+    const nextScrollLeft = event.currentTarget.scrollLeft || 0;
+    const scrollDelta = Math.abs(nextScrollLeft - horizontalScrollLeftRef.current);
+    horizontalScrollLeftRef.current = nextScrollLeft;
+    if (scrollDelta < 1) return;
+    if (!focusEnabled || focusedPhoto?.phase !== 'closing') return;
+    finishFocusedPhotoReturn();
   }
 
   function openFocusedPhoto(event, photo, index) {
@@ -2797,12 +2848,16 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     const viewportLeft = viewport?.offsetLeft || 0;
     const viewportTop = viewport?.offsetTop || 0;
     const viewportCenterX = viewportLeft + viewportWidth / 2;
-    const viewportCenterY = viewportTop + viewportHeight / 2 - 24;
+    const viewportCenterY = viewportTop + viewportHeight / 2;
     const targetWidth = Math.min(viewportWidth * 0.78, 520);
+    const targetScale = targetWidth / Math.max(rect.width, 1);
+    const sourceOriginY = rect.top + rect.height * focusedPolaroidOriginYRatio;
+    const sourceCenterY = rect.top + rect.height / 2;
+    const scaledCenterOffsetY = (sourceCenterY - sourceOriginY) * targetScale;
     return {
       x: viewportCenterX - (rect.left + rect.width / 2),
-      y: viewportCenterY - (rect.top + rect.height / 2),
-      scale: targetWidth / Math.max(rect.width, 1),
+      y: viewportCenterY - (sourceOriginY + scaledCenterOffsetY),
+      scale: targetScale,
     };
   }
 
@@ -2833,11 +2888,14 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       rotate: 0,
       rotateX: focusedPolaroidTiltX,
       z: focusedPolaroidSourceDepth,
-      filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
     };
   }
 
   function getFocusedPhotoProxyAnimate(photoState) {
+    if (photoState.phase === 'closing') {
+      return getFocusedPhotoProxyExit();
+    }
+
     return {
       x: photoState.target.x,
       y: photoState.target.y,
@@ -2845,23 +2903,35 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
       rotate: 0,
       rotateX: [focusedPolaroidTiltX, 18, 0],
       z: [focusedPolaroidSourceDepth, -120, 0],
-      filter: 'drop-shadow(0 18px 38px rgba(0, 0, 0, 0.28))',
     };
   }
 
   function getFocusedPhotoProxyExit() {
     return {
       x: 0,
-      y: 0,
+      y: focusedPolaroidReturnSettleOffset,
       scale: 1,
       rotateX: [focusedPolaroidTiltX, 16, 0],
       z: [focusedPolaroidSourceDepth, -90, 0],
-      filter: 'drop-shadow(0 8px 16px rgba(0, 0, 0, 0.12))',
     };
   }
 
+  function getFocusedPhotoPaperY(photoState) {
+    if (photoState.phase === 'closing') return -focusedPolaroidReturnSettleOffset;
+    return 0;
+  }
+
+  function getFocusedPhotoShadowOpacity(photoState) {
+    if (photoState.phase === 'closing') return 0;
+    return [0, 1];
+  }
+
   return (
-    <div className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''} ${focusedPhoto || returningPhotoIndex !== null ? 'large-stack-scroll-focus-active' : ''}`}>
+    <div
+      className={`large-stack-scroll ${expanded ? 'large-stack-scroll-expanded' : ''} ${focusedPhoto || returningPhotoIndex !== null ? 'large-stack-scroll-focus-active' : ''}`}
+      ref={scrollRef}
+      onScroll={handleStackHorizontalScroll}
+    >
       {isSinglePhoto ? (
         <div className="large-stack" ref={stackRef}>
           <StaticPhotoElement
@@ -2875,7 +2945,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               }
             }}
             className="large-photo large-photo-1"
-            animate={focusEnabled ? getPhotoMotion(0, { x: 0, y: 0, scale: pressedPhotoIndex === 0 ? 0.97 : 1, rotate: 0, rotateX: 0, z: 0, zIndex: getPhotoZIndex(0), filter: 'drop-shadow(0 0 0 rgba(0, 0, 0, 0))' }) : undefined}
+            animate={focusEnabled ? getPhotoMotion(0, { x: 0, y: 0, scale: pressedPhotoIndex === 0 ? 0.97 : 1, rotate: 0, rotateX: 0, z: 0, zIndex: getPhotoZIndex(0), boxShadow: focusedPolaroidRestShadow }) : undefined}
             transition={focusedPolaroidLayoutTransition}
             style={getPhotoStyle(0, { left: 0, top: 0, transform: 'rotate(0deg)' })}
             {...photoInteractionProps(visible[0], 0)}
@@ -2922,7 +2992,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       rotateX: 0,
                       z: 0,
                       zIndex: getPhotoZIndex(index),
-                      filter: 'drop-shadow(0 0 0 rgba(0, 0, 0, 0))',
+                      boxShadow: focusedPolaroidRestShadow,
                     })
                   : getPhotoMotion(index, {
                       left: largePolaroidRest[index].left,
@@ -2934,7 +3004,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                       rotateX: 0,
                       z: 0,
                       zIndex: getPhotoZIndex(index),
-                      filter: 'drop-shadow(0 0 0 rgba(0, 0, 0, 0))',
+                      boxShadow: focusedPolaroidRestShadow,
                     })
               }
               transition={{
@@ -2976,17 +3046,18 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     key="focused-photo-dim"
                     className="large-photo-focus-layer large-photo-focus-layer-dim-only"
                     initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                    animate={{ opacity: focusedPhoto.phase === 'closing' ? 0 : 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+                    transition={{ duration: focusedPhoto.phase === 'closing' ? 0.12 : 0.18, ease: [0, 0, 0.2, 1] }}
+                    style={{ pointerEvents: focusedPhoto.phase === 'closing' ? 'none' : 'auto' }}
                     onClick={closeFocusedPhoto}
                   >
                     <motion.div
                       className="large-photo-focus-dim"
                       initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
+                      animate={{ opacity: focusedPhoto.phase === 'closing' ? 0 : 1 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+                      transition={{ duration: focusedPhoto.phase === 'closing' ? 0.12 : 0.18, ease: [0, 0, 0.2, 1] }}
                     />
                   </motion.div>
                 ) : null}
@@ -2999,8 +3070,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     className="large-photo large-photo-focused-proxy"
                     initial={getFocusedPhotoProxyInitial(focusedPhoto)}
                     animate={getFocusedPhotoProxyAnimate(focusedPhoto)}
-                    exit={getFocusedPhotoProxyExit()}
-                    transition={focusedPolaroidLayoutTransition}
+                    transition={focusedPhoto.phase === 'closing' ? focusedPolaroidReturnTransition : focusedPolaroidLayoutTransition}
                     style={{
                       position: 'fixed',
                       left: focusedPhoto.sourceRect?.left || 0,
@@ -3013,7 +3083,20 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
                     }}
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
+                    <motion.div
+                      className="large-photo-focused-content"
+                      initial={{ y: 0 }}
+                      animate={{ y: getFocusedPhotoPaperY(focusedPhoto) }}
+                      transition={focusedPhoto.phase === 'closing' ? focusedPolaroidReturnSettleTransition : focusedPolaroidLayoutTransition}
+                    >
+                      <motion.div
+                        className="large-photo-focused-shadow"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: getFocusedPhotoShadowOpacity(focusedPhoto) }}
+                        transition={focusedPolaroidShadowTransition}
+                      />
+                      <PhotoImage photo={focusedPhoto.photo} transform={photoTransforms.focus} eager />
+                    </motion.div>
                   </motion.button>
                 ) : null}
               </AnimatePresence>

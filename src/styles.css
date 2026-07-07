@@ -1133,20 +1133,6 @@ img {
   padding: 0 28px;
 }
 
-.large-stack-scroll-focus-active,
-.comments-screen .diary-item-detail .large-stack-scroll-focus-active {
-  overflow: visible !important;
-}
-
-.large-photo-target-focus-active .screen-stage,
-.large-photo-target-focus-active .phone,
-.large-photo-target-focus-active .comments-screen,
-.large-photo-target-focus-active .diary-item-detail,
-.large-photo-target-focus-active .large-stack,
-.large-photo-target-focus-active .comment-thread {
-  overflow: visible !important;
-}
-
 .large-stack {
   position: relative;
   width: 180px;
@@ -1193,6 +1179,36 @@ img {
   height: 133.938px;
   object-fit: cover;
   pointer-events: none;
+}
+
+.large-photo-focused-proxy {
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.large-photo-focused-content {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #ffffff;
+  box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.large-photo-focused-shadow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.large-photo-focused-content img {
+  z-index: 1;
 }
 
 .large-photo-focus-layer {
