@@ -1906,6 +1906,7 @@ function Home({
   active = true,
   monthDate,
   entries,
+  availableDiaryMonthKeys = [],
   stickersByMonth,
   onChangeMonth,
   onChangeStickers,
@@ -1955,16 +1956,10 @@ function Home({
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
   const selectableMonthOptions = useMemo(() => {
-    const entryMonthKeys = new Set(
-      entries
-        .map((entry) => {
-          const entryDate = new Date(`${entry.date}T00:00:00`);
-          return Number.isNaN(entryDate.getTime()) ? '' : getMonthKey(entryDate);
-        })
-        .filter(Boolean)
-    );
+    const loadedEntryMonthKeys = entries.map((entry) => getMonthKeyForDate(entry.date));
+    const entryMonthKeys = new Set([...availableDiaryMonthKeys, ...loadedEntryMonthKeys].filter(Boolean));
     return monthPages.filter((month) => entryMonthKeys.has(month.key));
-  }, [entries, monthPages]);
+  }, [availableDiaryMonthKeys, entries, monthPages]);
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
 
   useEffect(() => {
@@ -4017,6 +4012,21 @@ async function fetchDiaryEntriesForMonth(monthStart, viewerMemberId = currentMem
   return hydrateDiaryEntries(entryRows || [], viewerMemberId);
 }
 
+async function fetchAvailableDiaryMonthKeys() {
+  if (!hasSupabaseConfig) {
+    return Array.from(new Set(readLocalEntries().map((entry) => getMonthKeyForDate(entry.date)))).sort();
+  }
+
+  const { data, error } = await supabase
+    .from('diary_entries')
+    .select('diary_date')
+    .eq('space_id', coupleSpaceId)
+    .order('diary_date', { ascending: true });
+
+  if (error) throw error;
+  return Array.from(new Set((data || []).map((entry) => getMonthKeyForDate(entry.diary_date)))).filter(Boolean);
+}
+
 async function fetchDiaryEntryById(entryId, viewerMemberId = currentMemberId) {
   if (!hasSupabaseConfig || !isSupabaseUuid(entryId)) return null;
 
@@ -4330,6 +4340,7 @@ export default function App() {
   const [homeMonth, setHomeMonth] = useState(getInitialHomeMonth);
   const [selectedWeek, setSelectedWeek] = useState(initialWeeks[0]);
   const [entries, setEntries] = useState([]);
+  const [availableDiaryMonthKeys, setAvailableDiaryMonthKeys] = useState([]);
   const [stickersByMonth, setStickersByMonth] = useState(readLocalStickers);
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [shouldOpenUploadDatePicker, setShouldOpenUploadDatePicker] = useState(false);
@@ -4382,6 +4393,11 @@ export default function App() {
     });
   }
 
+  function addAvailableDiaryMonthKey(monthKey) {
+    if (!monthKey) return;
+    setAvailableDiaryMonthKeys((current) => (current.includes(monthKey) ? current : [...current, monthKey].sort()));
+  }
+
   async function persistMonthStickers(monthKey, stickers, memberId = selectedMemberId) {
     try {
       await saveHomeMonthStickers(monthKey, stickers, memberId);
@@ -4414,10 +4430,11 @@ export default function App() {
     loadedDiaryMonthKeys.current = new Set();
     pendingDiaryMonthKeys.current = new Set();
 
-    Promise.all([fetchDiaryEntries(selectedMemberId), fetchHomeStickers()])
-      .then(([nextEntries, nextStickers]) => {
+    Promise.all([fetchDiaryEntries(selectedMemberId), fetchAvailableDiaryMonthKeys(), fetchHomeStickers()])
+      .then(([nextEntries, nextAvailableDiaryMonthKeys, nextStickers]) => {
         if (!isMounted) return;
         setEntriesAndCache(nextEntries);
+        setAvailableDiaryMonthKeys(nextAvailableDiaryMonthKeys);
         setStickersAndCache(nextStickers);
         setSelectedEntryId(nextEntries[0]?.id || null);
         setLoadError('');
@@ -4426,10 +4443,12 @@ export default function App() {
         if (!isMounted) return;
         if (hasSupabaseConfig) {
           setEntries([]);
+          setAvailableDiaryMonthKeys([]);
           setSelectedEntryId(null);
         } else {
           const localEntries = readLocalEntries();
           setEntriesAndCache(localEntries);
+          setAvailableDiaryMonthKeys(Array.from(new Set(localEntries.map((entry) => getMonthKeyForDate(entry.date)))).sort());
           setSelectedEntryId(localEntries[0]?.id || null);
         }
         setLoadError(error.message || '일기를 불러오지 못했어요.');
@@ -4801,6 +4820,7 @@ export default function App() {
     if (!hasSupabaseConfig) {
       const savedEntry = buildLocalSavedEntry({ ...entry, nickname: selectedMemberNickname }, entryId);
       setEntriesAndCache((current) => [savedEntry, ...current]);
+      addAvailableDiaryMonthKey(getMonthKeyForDate(savedEntry.date));
       setSelectedEntryId(entryId);
       return;
     }
@@ -4839,6 +4859,7 @@ export default function App() {
     );
 
     setEntriesAndCache((current) => [savedEntry, ...current]);
+    addAvailableDiaryMonthKey(getMonthKeyForDate(savedEntry.date));
     setSelectedEntryId(entryId);
     void notifyWebPush('diary_created', { entryId }, selectedMemberId);
   }
@@ -5123,6 +5144,7 @@ export default function App() {
           active={screen === 'home'}
           monthDate={homeMonth}
           entries={entries}
+          availableDiaryMonthKeys={availableDiaryMonthKeys}
           stickersByMonth={stickersByMonth}
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
