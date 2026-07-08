@@ -1373,26 +1373,28 @@ function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBi
   return <motion.span className="floating-upload-anchor">{button}</motion.span>;
 }
 
-function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname }) {
+function HomeHeader({ monthDate, monthOptions = [], onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname }) {
   const [isPressed, setIsPressed] = useState(false);
   const [isCouplePressed, setIsCouplePressed] = useState(false);
-  const monthInputRef = useRef(null);
+  const monthSelectRef = useRef(null);
   const releasePress = () => setIsPressed(false);
   const releaseCouplePress = () => setIsCouplePressed(false);
+  const selectedMonthKey = getMonthKey(monthDate);
+  const hasSelectedMonthOption = monthOptions.some((month) => month.key === selectedMonthKey);
 
   function openMonthPicker() {
-    const input = monthInputRef.current;
-    if (!input) return;
+    const select = monthSelectRef.current;
+    if (!select) return;
 
-    input.focus({ preventScroll: true });
+    select.focus({ preventScroll: true });
     try {
-      if (typeof input.showPicker === 'function') {
-        input.showPicker();
+      if (typeof select.showPicker === 'function') {
+        select.showPicker();
       } else {
-        input.click();
+        select.click();
       }
     } catch {
-      input.click();
+      select.click();
     }
   }
 
@@ -1414,17 +1416,25 @@ function HomeHeader({ monthDate, minMonth, maxMonth, onSelectMonth, onOpenNickna
         <strong>
           {monthDate.getMonth() + 1}월 <img src={assets.down} alt="" />
         </strong>
-        <input
-          ref={monthInputRef}
+        <select
+          ref={monthSelectRef}
           className="month-picker-input"
-          type="month"
-          value={getMonthKey(monthDate)}
-          min={minMonth}
-          max={maxMonth}
+          value={selectedMonthKey}
           aria-label="월 선택"
           tabIndex={-1}
           onChange={(event) => onSelectMonth(event.target.value)}
-        />
+        >
+          {!hasSelectedMonthOption ? (
+            <option value={selectedMonthKey} disabled hidden>
+              {monthDate.getFullYear()}년 {monthDate.getMonth() + 1}월
+            </option>
+          ) : null}
+          {monthOptions.map((month) => (
+            <option key={month.key} value={month.key}>
+              {month.date.getFullYear()}년 {month.date.getMonth() + 1}월
+            </option>
+          ))}
+        </select>
       </motion.button>
       <motion.button
         className="couple-state"
@@ -1944,6 +1954,17 @@ function Home({
   const activeWeeks = monthWeeksByKey.get(getMonthKey(activeMonthDate)) || [];
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
+  const selectableMonthOptions = useMemo(() => {
+    const entryMonthKeys = new Set(
+      entries
+        .map((entry) => {
+          const entryDate = new Date(`${entry.date}T00:00:00`);
+          return Number.isNaN(entryDate.getTime()) ? '' : getMonthKey(entryDate);
+        })
+        .filter(Boolean)
+    );
+    return monthPages.filter((month) => entryMonthKeys.has(month.key));
+  }, [entries, monthPages]);
   const monthTrackX = useMotionValue(-activeMonthIndex * screenPushDistance);
 
   useEffect(() => {
@@ -2542,8 +2563,7 @@ function Home({
       <img className="paper-bg" src={assets.bg} alt="" />
       <HomeHeader
         monthDate={activeMonthDate}
-        minMonth={monthPages[0]?.key}
-        maxMonth={monthPages[monthPages.length - 1]?.key}
+        monthOptions={selectableMonthOptions}
         onSelectMonth={handleSelectMonth}
         onOpenNicknamePicker={onOpenNicknamePicker}
         currentNickname={currentNickname}
