@@ -5106,6 +5106,8 @@ export default function App() {
     if (typeof document === 'undefined') return undefined;
 
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    const initialSplash = document.getElementById('initial-splash');
+    initialSplash?.remove();
     document.body.classList.toggle('splash-active', showSplash);
     themeColorMeta?.setAttribute('content', showSplash ? '#ffffff' : '#FAF9F7');
 

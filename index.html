@@ -13,10 +13,34 @@
           linear-gradient(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.6)),
           url("./assets/bg-home.png") center top / cover repeat-y #FAF9F7;
       }
+
+      body.splash-active {
+        background: #ffffff;
+      }
+
+      #initial-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+      }
+
+      #initial-splash img {
+        display: block;
+        width: 170px;
+        height: 170px;
+        margin-top: -124px;
+        object-fit: contain;
+      }
     </style>
     <title>아보카도</title>
   </head>
-  <body>
+  <body class="splash-active">
+    <div id="initial-splash" role="status" aria-label="앱 로딩 중">
+      <img src="%BASE_URL%app-logo.png" alt="" />
+    </div>
     <main id="app" aria-label="아보카도 커플 다이어리"></main>
     <script type="module" src="/src/main.jsx"></script>
   </body>
