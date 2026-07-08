@@ -19,6 +19,24 @@ body.splash-active {
   background: #ffffff;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  height: env(safe-area-inset-top, 0px);
+  background: rgba(0, 0, 0, 0.48);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s cubic-bezier(0, 0, 0.2, 1);
+}
+
+body.large-photo-dim-active::before {
+  opacity: 1;
+}
+
 button,
 input,
 textarea {

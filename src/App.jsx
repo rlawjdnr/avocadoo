@@ -2,6 +2,14 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
+import {
+  SWIPE_DIRECTION_THRESHOLD_PX,
+  SWIPE_FLICK_MIN_DISTANCE_PX,
+  SWIPE_FLICK_VELOCITY_PX_PER_MS,
+  SWIPE_HORIZONTAL_ANGLE_DEG,
+  SWIPE_VELOCITY_SAMPLE_MS,
+  useSwipeGesture,
+} from './useSwipeGesture';
 
 const assets = {
   bg: './assets/bg-home.png',
@@ -575,7 +583,7 @@ function buildMonthWeeks(monthStart) {
     });
   }
 
-  return weeks.reverse();
+  return weeks;
 }
 
 const initialWeeks = buildMonthWeeks(initialMonthStart);
@@ -1902,7 +1910,6 @@ function Home({
 }) {
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
-  const monthGesture = useRef(null);
   const monthAnimation = useRef(null);
   const monthTrackFrame = useRef(null);
   const pendingMonthTrackX = useRef(null);
@@ -1955,7 +1962,6 @@ function Home({
     isStickerPickerOpenRef.current = isStickerPickerOpen;
     if (!isStickerPickerOpen) return;
 
-    monthGesture.current = null;
     dragBlockedClick.current = false;
     cancelScheduledMonthTrackPosition();
     stopMonthAnimation();
@@ -2043,7 +2049,6 @@ function Home({
       startY: event.clientY,
       timerId: window.setTimeout(() => {
         dragBlockedClick.current = true;
-        monthGesture.current = null;
         openStickerPicker();
         longPressGesture.current = null;
       }, 560),
@@ -2062,10 +2067,6 @@ function Home({
   function getMonthSwipeThreshold(viewport) {
     const monthPageWidth = getMonthPageWidth(viewport);
     return Math.max(96, monthPageWidth * 0.18);
-  }
-
-  function getMonthSwipeVelocityThreshold() {
-    return 0.45;
   }
 
   function setMonthTrackPosition(value) {
@@ -2121,96 +2122,76 @@ function Home({
     setMonthTrackPosition(targetTrackX);
   }
 
-  function startMonthGesture(pointerId, x, y, source = 'pointer') {
-    if (isStickerPickerOpenRef.current) return;
-    const viewport = monthViewportRef.current;
-    if (!viewport) return;
-
-    dragBlockedClick.current = false;
-    monthGesture.current = {
-      pointerId,
-      source,
-      startX: x,
-      startY: y,
-      startTime: performance.now(),
-      startTrackX: monthTrackX.get(),
-      isHorizontal: false,
-    };
-  }
-
-  function updateMonthGesture(pointerId, x, y, event) {
-    if (isStickerPickerOpenRef.current) return false;
-    const viewport = monthViewportRef.current;
-    const gesture = monthGesture.current;
-    if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
-
-    const deltaX = x - gesture.startX;
-    const deltaY = y - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-
-    if (!gesture.isHorizontal && absX > 14 && absX > absY * 1.25) {
-      gesture.isHorizontal = true;
+  const monthSwipeGesture = useSwipeGesture({
+    enabled: !isStickerPickerOpen,
+    thresholdPx: SWIPE_DIRECTION_THRESHOLD_PX,
+    horizontalAngleDeg: SWIPE_HORIZONTAL_ANGLE_DEG,
+    velocitySampleMs: SWIPE_VELOCITY_SAMPLE_MS,
+    onPendingStart: () => {
+      dragBlockedClick.current = false;
+    },
+    onHorizontalLock: () => {
       dragBlockedClick.current = true;
+      clearHomeLongPress();
       stopMonthAnimation();
-    }
+    },
+    onHorizontalMove: (gesture) => {
+      if (isStickerPickerOpenRef.current) return;
+      const viewport = monthViewportRef.current;
+      if (!viewport) return;
 
-    if (!gesture.isHorizontal) return false;
-
-    if (event?.cancelable) event.preventDefault();
-    const monthPageWidth = getMonthPageWidth(viewport);
-    const minTrackX = -(monthPages.length - 1) * monthPageWidth;
-    const nextTrackX = Math.min(Math.max(gesture.startTrackX + deltaX, minTrackX), 0);
-    setMonthTrackPositionOnFrame(nextTrackX);
-    return true;
-  }
-
-  function finishMonthGesture(pointerId, x, y, cancelled = false) {
-    if (isStickerPickerOpenRef.current) {
-      monthGesture.current = null;
+      const monthPageWidth = getMonthPageWidth(viewport);
+      const minTrackX = -(monthPages.length - 1) * monthPageWidth;
+      const startTrackX = -activeMonthIndexRef.current * monthPageWidth;
+      const nextTrackX = Math.min(Math.max(startTrackX + gesture.deltaX, minTrackX), 0);
+      setMonthTrackPositionOnFrame(nextTrackX);
+    },
+    onVerticalLock: () => {
+      clearHomeLongPress();
       dragBlockedClick.current = false;
-      return false;
-    }
-    const viewport = monthViewportRef.current;
-    const gesture = monthGesture.current;
-    if (!viewport || !gesture || gesture.pointerId !== pointerId) return false;
+    },
+    onHorizontalEnd: (gesture) => {
+      if (isStickerPickerOpenRef.current) {
+        dragBlockedClick.current = false;
+        return;
+      }
 
-    cancelScheduledMonthTrackPosition();
-    monthGesture.current = null;
+      const viewport = monthViewportRef.current;
+      if (!viewport) return;
 
-    if (cancelled) {
-      if (gesture.isHorizontal) snapMonthBack(viewport);
+      cancelScheduledMonthTrackPosition();
+
+      const absX = Math.abs(gesture.deltaX);
+      const swipeVelocity = Math.abs(gesture.velocityX);
+      const isDistanceSwipe = absX >= getMonthSwipeThreshold(viewport);
+      const isFastSwipe = absX >= SWIPE_FLICK_MIN_DISTANCE_PX && swipeVelocity >= SWIPE_FLICK_VELOCITY_PX_PER_MS;
+      const isValidSwipe = isDistanceSwipe || isFastSwipe;
+
+      if (isValidSwipe) {
+        moveToMonth(activeMonthIndexRef.current + (gesture.deltaX < 0 ? 1 : -1), viewport);
+      } else {
+        snapMonthBack(viewport);
+      }
+
+      window.setTimeout(() => {
+        dragBlockedClick.current = false;
+      }, 160);
+    },
+    onCancel: (gesture) => {
+      const viewport = monthViewportRef.current;
+      cancelScheduledMonthTrackPosition();
+      clearHomeLongPress();
+
+      if (viewport && (gesture.axis === 'horizontal' || gesture.axis === 'pending')) {
+        snapMonthBack(viewport);
+      }
+
       dragBlockedClick.current = false;
-      return true;
-    }
-
-    if (!gesture.isHorizontal) {
-      dragBlockedClick.current = false;
-      return true;
-    }
-
-    const deltaX = x - gesture.startX;
-    const deltaY = y - gesture.startY;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-    const elapsedMs = Math.max(performance.now() - gesture.startTime, 1);
-    const swipeVelocity = absX / elapsedMs;
-    const isHorizontalSwipe = absX > absY * 1.25;
-    const isDistanceSwipe = absX >= getMonthSwipeThreshold(viewport);
-    const isFastSwipe = absX >= 24 && swipeVelocity >= getMonthSwipeVelocityThreshold();
-    const isValidSwipe = isHorizontalSwipe && (isDistanceSwipe || isFastSwipe);
-
-    if (isValidSwipe) {
-      moveToMonth(activeMonthIndexRef.current + (deltaX < 0 ? 1 : -1), viewport);
-    } else {
-      snapMonthBack(viewport);
-    }
-
-    window.setTimeout(() => {
-      dragBlockedClick.current = false;
-    }, 160);
-    return true;
-  }
+    },
+    onFinish: (gesture) => {
+      if (gesture.axis !== 'horizontal') dragBlockedClick.current = false;
+    },
+  });
 
   useLayoutEffect(() => {
     const viewport = monthViewportRef.current;
@@ -2239,7 +2220,7 @@ function Home({
     if (!viewport) return;
 
     startHomeLongPress(event);
-    startMonthGesture(event.pointerId, event.clientX, event.clientY);
+    monthSwipeGesture.onPointerDown(event);
 
     if (event.pointerType === 'mouse' && event.currentTarget.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -2249,12 +2230,11 @@ function Home({
   function handleMonthPointerMove(event) {
     if (isStickerPickerOpenRef.current) return;
     updateHomeLongPress(event);
-    updateMonthGesture(event.pointerId, event.clientX, event.clientY, event);
+    monthSwipeGesture.onPointerMove(event);
   }
 
   function finishMonthPointer(event, cancelled = false) {
     if (isStickerPickerOpenRef.current) {
-      monthGesture.current = null;
       dragBlockedClick.current = false;
       clearHomeLongPress();
       return;
@@ -2264,10 +2244,11 @@ function Home({
     }
     clearHomeLongPress();
 
-    const gesture = monthGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-
-    finishMonthGesture(event.pointerId, event.clientX, event.clientY, cancelled);
+    if (cancelled) {
+      monthSwipeGesture.onPointerCancel(event);
+    } else {
+      monthSwipeGesture.onPointerUp(event);
+    }
   }
 
   function handleSelectWeek(week, nextScreen = 'list', source = '') {
@@ -2679,8 +2660,10 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const stackRef = useRef(null);
   const scrollRef = useRef(null);
   const focusOpenedAtRef = useRef(0);
+  const focusClosingStartedAtRef = useRef(0);
   const returningPhotoTimerRef = useRef(null);
   const horizontalScrollLeftRef = useRef(0);
+  const userScrollIntentRef = useRef(false);
   const visible = photos.slice(0, maxUploadPhotos);
   const isSinglePhoto = visible.length === 1;
   const StaticPhotoElement = focusEnabled ? motion.button : 'span';
@@ -2701,8 +2684,20 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     const isFocusActive = focusEnabled && (focusedPhoto || returningPhotoIndex !== null);
+    const isDimActive = focusEnabled && focusedPhoto && focusedPhoto.phase !== 'closing';
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     document.body.classList.toggle('large-photo-target-focus-active', Boolean(isFocusActive));
-    return () => document.body.classList.remove('large-photo-target-focus-active');
+    document.body.classList.toggle('large-photo-dim-active', Boolean(isDimActive));
+    if (!document.body.classList.contains('splash-active')) {
+      themeColorMeta?.setAttribute('content', isDimActive ? '#7d7c7a' : '#FAF9F7');
+    }
+    return () => {
+      document.body.classList.remove('large-photo-target-focus-active');
+      document.body.classList.remove('large-photo-dim-active');
+      if (!document.body.classList.contains('splash-active')) {
+        themeColorMeta?.setAttribute('content', '#FAF9F7');
+      }
+    };
   }, [focusEnabled, focusedPhoto, returningPhotoIndex]);
 
   useEffect(() => {
@@ -2712,12 +2707,26 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   useEffect(() => {
     if (!focusEnabled || focusedPhoto?.phase !== 'closing' || typeof document === 'undefined') return undefined;
 
+    function handleUserScrollIntent() {
+      userScrollIntentRef.current = true;
+    }
+
     function handleCapturedScroll() {
+      if (!userScrollIntentRef.current) return;
+      if (Date.now() - focusClosingStartedAtRef.current < 140) return;
       finishFocusedPhotoReturn();
     }
 
+    userScrollIntentRef.current = false;
+    document.addEventListener('wheel', handleUserScrollIntent, { capture: true, passive: true });
+    document.addEventListener('touchmove', handleUserScrollIntent, { capture: true, passive: true });
     document.addEventListener('scroll', handleCapturedScroll, true);
-    return () => document.removeEventListener('scroll', handleCapturedScroll, true);
+    return () => {
+      userScrollIntentRef.current = false;
+      document.removeEventListener('wheel', handleUserScrollIntent, true);
+      document.removeEventListener('touchmove', handleUserScrollIntent, true);
+      document.removeEventListener('scroll', handleCapturedScroll, true);
+    };
   }, [focusEnabled, focusedPhoto?.phase]);
 
   useEffect(() => {
@@ -2807,6 +2816,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
 
   function focusPhoto(photo, index, sourceRect = getPhotoSourceRect(index)) {
     if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
+    userScrollIntentRef.current = false;
     setReturningPhotoIndex(null);
     focusOpenedAtRef.current = Date.now();
     setFocusedPhoto({ photo, index, sourceRect, target: getFocusedPhotoTargetTransform(sourceRect), phase: 'open' });
@@ -2815,6 +2825,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   function closeFocusedPhoto() {
     if (!focusedPhoto || focusedPhoto.phase === 'closing') return;
     if (Date.now() - focusOpenedAtRef.current < 280) return;
+    userScrollIntentRef.current = false;
+    focusClosingStartedAtRef.current = Date.now();
     setReturningPhotoIndex(focusedPhoto.index);
     setFocusedPhoto((current) => (current ? { ...current, phase: 'closing' } : current));
     returningPhotoTimerRef.current = window.setTimeout(() => {
@@ -2835,6 +2847,8 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     horizontalScrollLeftRef.current = nextScrollLeft;
     if (scrollDelta < 1) return;
     if (!focusEnabled || focusedPhoto?.phase !== 'closing') return;
+    if (!userScrollIntentRef.current) return;
+    if (Date.now() - focusClosingStartedAtRef.current < 140) return;
     finishFocusedPhotoReturn();
   }
 
