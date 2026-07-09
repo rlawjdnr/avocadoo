@@ -3244,13 +3244,17 @@ function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false
   return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} autoExpanded={autoExpanded} />;
 }
 
-function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance }) {
+function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance, savedListState = null, onSaveListState }) {
   const listRef = useRef(null);
   const entryRefs = useRef(new Map());
   const focusedWeekRef = useRef('');
   const scrollFrameRef = useRef(null);
   const hasUserScrolledListRef = useRef(false);
   const isProgrammaticListScrollRef = useRef(false);
+  const restoredListStateRef = useRef('');
+  const renderedEntryCountRef = useRef(listInitialRenderCount);
+  const savedScrollTop = Number.isFinite(savedListState?.scrollTop) ? savedListState.scrollTop : null;
+  const savedRenderedEntryCount = Number.isFinite(savedListState?.renderedEntryCount) ? savedListState.renderedEntryCount : listInitialRenderCount;
   const selectedMonthKey = getMonthKeyForDate(selectedWeek.startDate);
   const monthEntries = useMemo(
     () => sortEntriesByDateAscending(entries.filter((entry) => getMonthKeyForDate(entry.date) === selectedMonthKey)),
@@ -3268,13 +3272,34 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   const renderedMonthEntries = monthEntries.slice(0, renderedEntryCount);
 
   useEffect(() => {
+    const hasSavedScrollTop = Number.isFinite(savedScrollTop);
     setVisibleWeek(weeksById.get(selectedWeek.id) || selectedWeek);
-    focusedWeekRef.current = '';
-    hasUserScrolledListRef.current = false;
+    focusedWeekRef.current = hasSavedScrollTop ? selectedWeek.id : '';
+    hasUserScrolledListRef.current = hasSavedScrollTop;
     isProgrammaticListScrollRef.current = false;
-    setRenderedEntryCount(listInitialRenderCount);
+    restoredListStateRef.current = '';
+    setRenderedEntryCount(Math.max(listInitialRenderCount, savedRenderedEntryCount));
     setAutoExpandedEntryIds(new Set());
-  }, [selectedWeek.id]);
+  }, [savedRenderedEntryCount, savedScrollTop, selectedWeek.id]);
+
+  useEffect(() => {
+    renderedEntryCountRef.current = renderedEntryCount;
+    const list = listRef.current;
+    if (!list) return;
+    onSaveListState?.(selectedWeek.id, {
+      scrollTop: list.scrollTop || 0,
+      renderedEntryCount,
+    });
+  }, [onSaveListState, renderedEntryCount, selectedWeek.id]);
+
+  useEffect(() => () => {
+    const list = listRef.current;
+    if (!list) return;
+    onSaveListState?.(selectedWeek.id, {
+      scrollTop: list.scrollTop || 0,
+      renderedEntryCount: renderedEntryCountRef.current,
+    });
+  }, [onSaveListState, selectedWeek.id]);
 
   useEffect(() => {
     setVisibleWeek((current) => weeksById.get(current?.id) || current);
@@ -3283,6 +3308,30 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   useEffect(() => {
     setRenderedEntryCount((current) => Math.min(Math.max(current, listInitialRenderCount), Math.max(monthEntries.length, listInitialRenderCount)));
   }, [monthEntries.length]);
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    setRenderedEntryCount((current) => Math.max(current, listInitialRenderCount, savedRenderedEntryCount));
+  }, [active, savedRenderedEntryCount]);
+
+  useLayoutEffect(() => {
+    if (!active || !Number.isFinite(savedScrollTop)) return;
+    if (restoredListStateRef.current === selectedWeek.id) return;
+
+    const list = listRef.current;
+    if (!list) return;
+
+    isProgrammaticListScrollRef.current = true;
+    hasUserScrolledListRef.current = true;
+    focusedWeekRef.current = selectedWeek.id;
+    list.scrollTo({ top: Math.max(0, savedScrollTop), behavior: 'auto' });
+    restoredListStateRef.current = selectedWeek.id;
+    window.requestAnimationFrame(() => {
+      isProgrammaticListScrollRef.current = false;
+      updateVisibleWeek();
+      updateAutoExpandedEntry();
+    });
+  }, [active, savedScrollTop, selectedWeek.id]);
 
   useLayoutEffect(() => {
     if (!active || focusedWeekRef.current === selectedWeek.id) return;
@@ -3371,6 +3420,10 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     if (!isProgrammaticListScrollRef.current) {
       hasUserScrolledListRef.current = true;
     }
+    onSaveListState?.(selectedWeek.id, {
+      scrollTop: listRef.current?.scrollTop || 0,
+      renderedEntryCount: renderedEntryCountRef.current,
+    });
     if (scrollFrameRef.current !== null) return;
 
     scrollFrameRef.current = window.requestAnimationFrame(() => {
@@ -4371,6 +4424,7 @@ export default function App() {
   const consumedDeepLinkedMonthKey = useRef('');
   const loadedDiaryMonthKeys = useRef(new Set());
   const pendingDiaryMonthKeys = useRef(new Set());
+  const listStateByWeek = useRef(new Map());
   const screenTransitionResetTimer = useRef(null);
   const screenTransitionRunId = useRef(0);
   const screenPushDistance = useViewportWidth();
@@ -5185,10 +5239,14 @@ export default function App() {
           screenPushDistance={screenPushDistance}
           entries={entries}
           selectedWeek={selectedWeek}
+          savedListState={listStateByWeek.current.get(selectedWeek.id) || null}
           onNavigate={navigate}
           onToggleLike={toggleEntryLike}
           onOpenComments={openComments}
           onEditEntry={openEditEntry}
+          onSaveListState={(weekId, listState) => {
+            if (weekId) listStateByWeek.current.set(weekId, listState);
+          }}
         />
       ) : null}
       {showComments ? (
