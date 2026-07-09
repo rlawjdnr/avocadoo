@@ -267,7 +267,6 @@ const instagramLikeHapticMs = 10;
 const stickerModeHapticMs = 8;
 const listFocusedEntryInset = 96;
 const listWeekAnchorOffset = 120;
-const listPolaroidAutoExpandAnchorRatio = 0.4;
 const stickerStorageKey = 'avocadoo.home.stickers.v1';
 const stickerBaseSize = 100;
 const homeWeekListTop = 63;
@@ -2665,7 +2664,7 @@ function ReactionButton({ icon, activeIcon, active = false, count, label, onClic
   );
 }
 
-function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, showDateLabel = false, controlledExpanded = null, autoExpanded = false }) {
+function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = false, lockedExpanded = false, focusEnabled = false, toggleEnabled = false, showDateLabel = false, controlledExpanded = null }) {
   const [isStackPressed, setIsStackPressed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [pressedPhotoIndex, setPressedPhotoIndex] = useState(null);
@@ -2687,10 +2686,6 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const releaseStackPress = () => setIsStackPressed(false);
   const expanded = isSinglePhoto || lockedExpanded || (controlledExpanded ?? isExpanded);
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
-
-  useLayoutEffect(() => {
-    if (autoExpanded && !isSinglePhoto) setIsExpanded(true);
-  }, [autoExpanded, isSinglePhoto]);
 
   useEffect(() => () => {
     if (returningPhotoTimerRef.current) window.clearTimeout(returningPhotoTimerRef.current);
@@ -3213,13 +3208,13 @@ function DiaryCardReactions({ entry, onToggleLike, onOpenComments, detail = fals
   );
 }
 
-function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit, itemRef, autoExpanded = false }) {
+function DiaryListCard({ entry, onToggleLike, onOpenComments, onEdit, itemRef }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
 
   return (
     <article className="diary-item diary-item-created diary-item-list-card" ref={itemRef}>
       <DiaryCardHeader entry={normalizedEntry} onEdit={onEdit} />
-      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled autoExpanded={autoExpanded} />
+      <LargePolaroidStack photos={normalizedEntry.photos} dateLabel={normalizedEntry.dateLabel} defaultExpanded={normalizedEntry.photos.length > 4} toggleEnabled />
       <DiaryCardBody entry={normalizedEntry} onOpen={onOpenComments} />
       <DiaryCardReactions entry={normalizedEntry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
     </article>
@@ -3239,9 +3234,9 @@ function DiaryDetailCard({ entry, onToggleLike, onOpenComments, onEdit }) {
   );
 }
 
-function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false, itemRef, autoExpanded = false }) {
+function DiaryItem({ entry, onToggleLike, onOpenComments, onEdit, detail = false, itemRef }) {
   if (!entry) return null;
-  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} autoExpanded={autoExpanded} />;
+  return detail ? <DiaryDetailCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} /> : <DiaryListCard entry={entry} onToggleLike={onToggleLike} onOpenComments={onOpenComments} onEdit={onEdit} itemRef={itemRef} />;
 }
 
 function List({ active = true, entries, onNavigate, selectedWeek, transitionKind, onToggleLike, onOpenComments, onEditEntry, screenPushDistance, savedListState = null, onSaveListState }) {
@@ -3253,7 +3248,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   const isProgrammaticListScrollRef = useRef(false);
   const restoredListStateRef = useRef('');
   const renderedEntryCountRef = useRef(listInitialRenderCount);
-  const autoExpandScrollTopRef = useRef(null);
   const savedScrollTop = Number.isFinite(savedListState?.scrollTop) ? savedListState.scrollTop : null;
   const savedRenderedEntryCount = Number.isFinite(savedListState?.renderedEntryCount) ? savedListState.renderedEntryCount : listInitialRenderCount;
   const selectedMonthKey = getMonthKeyForDate(selectedWeek.startDate);
@@ -3268,7 +3262,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   const weeksById = useMemo(() => new Map(monthWeeks.map((week) => [week.id, week])), [monthWeeks]);
   const [visibleWeek, setVisibleWeek] = useState(() => weeksById.get(selectedWeek.id) || selectedWeek);
   const [renderedEntryCount, setRenderedEntryCount] = useState(listInitialRenderCount);
-  const [autoExpandedEntryIds, setAutoExpandedEntryIds] = useState(() => new Set());
   const headerWeek = visibleWeek || selectedWeek;
   const renderedMonthEntries = monthEntries.slice(0, renderedEntryCount);
 
@@ -3280,7 +3273,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     isProgrammaticListScrollRef.current = false;
     restoredListStateRef.current = '';
     setRenderedEntryCount(Math.max(listInitialRenderCount, savedRenderedEntryCount));
-    setAutoExpandedEntryIds(new Set());
   }, [savedRenderedEntryCount, savedScrollTop, selectedWeek.id]);
 
   useEffect(() => {
@@ -3292,25 +3284,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
       renderedEntryCount,
     });
   }, [onSaveListState, renderedEntryCount, selectedWeek.id]);
-
-  useLayoutEffect(() => {
-    if (autoExpandScrollTopRef.current === null) return;
-
-    const list = listRef.current;
-    if (!list) {
-      autoExpandScrollTopRef.current = null;
-      return;
-    }
-
-    const preservedScrollTop = autoExpandScrollTopRef.current;
-    isProgrammaticListScrollRef.current = true;
-    list.scrollTop = preservedScrollTop;
-    window.requestAnimationFrame(() => {
-      list.scrollTop = preservedScrollTop;
-      isProgrammaticListScrollRef.current = false;
-      autoExpandScrollTopRef.current = null;
-    });
-  }, [autoExpandedEntryIds]);
 
   useEffect(() => () => {
     const list = listRef.current;
@@ -3349,7 +3322,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     window.requestAnimationFrame(() => {
       isProgrammaticListScrollRef.current = false;
       updateVisibleWeek();
-      updateAutoExpandedEntry();
     });
   }, [active, savedScrollTop, selectedWeek.id]);
 
@@ -3374,21 +3346,12 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     window.requestAnimationFrame(() => {
       isProgrammaticListScrollRef.current = false;
       updateVisibleWeek();
-      updateAutoExpandedEntry();
     });
   }, [active, monthEntries, renderedEntryCount, selectedWeek.id]);
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
   }, []);
-
-  useEffect(() => {
-    if (!active) return undefined;
-    const frameId = window.requestAnimationFrame(() => {
-      updateAutoExpandedEntry();
-    });
-    return () => window.cancelAnimationFrame(frameId);
-  }, [active, renderedEntryCount, monthEntries]);
 
   function updateVisibleWeek() {
     const list = listRef.current;
@@ -3411,32 +3374,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     setVisibleWeek((current) => (current?.id === nextWeek.id && current?.label === nextWeek.label ? current : nextWeek));
   }
 
-  function updateAutoExpandedEntry() {
-    const list = listRef.current;
-    if (!list || renderedMonthEntries.length === 0) {
-      setAutoExpandedEntryIds((current) => (current.size === 0 ? current : new Set()));
-      return;
-    }
-
-    const listRect = list.getBoundingClientRect();
-    const anchorY = listRect.top + list.clientHeight * listPolaroidAutoExpandAnchorRatio;
-    const anchoredEntry = renderedMonthEntries.find((entry) => {
-      const element = entryRefs.current.get(entry.id);
-      if (!element) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.top <= anchorY && rect.bottom >= anchorY;
-    });
-    const nextEntryId = anchoredEntry?.id || null;
-    if (!nextEntryId) return;
-    setAutoExpandedEntryIds((current) => {
-      if (current.has(nextEntryId)) return current;
-      autoExpandScrollTopRef.current = list.scrollTop || 0;
-      const next = new Set(current);
-      next.add(nextEntryId);
-      return next;
-    });
-  }
-
   function handleListScroll() {
     if (!isProgrammaticListScrollRef.current) {
       hasUserScrolledListRef.current = true;
@@ -3450,7 +3387,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       updateVisibleWeek();
-      updateAutoExpandedEntry();
       const list = listRef.current;
       if (!list) return;
       const remainingScroll = list.scrollHeight - list.scrollTop - list.clientHeight;
@@ -3471,7 +3407,6 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
             onToggleLike={onToggleLike}
             onOpenComments={onOpenComments}
             onEdit={onEditEntry}
-            autoExpanded={autoExpandedEntryIds.has(entry.id)}
             itemRef={(element) => {
               if (element) {
                 entryRefs.current.set(entry.id, element);
