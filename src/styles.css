@@ -1542,6 +1542,13 @@ body.splash-active .screen-stage {
   align-items: center;
   gap: 12px;
   width: 100%;
+  border-radius: 8px;
+  scroll-margin-top: 24px;
+}
+
+.comment-row-target {
+  background: rgba(255, 212, 96, 0.18);
+  box-shadow: 0 0 0 8px rgba(255, 212, 96, 0.18);
 }
 
 .comment-copy {

@@ -15,6 +15,7 @@ self.addEventListener('push', (event) => {
     data: {
       url: data.url || './',
       entryId: data.entryId || '',
+      commentId: data.commentId || '',
       type: data.type || '',
     },
   };

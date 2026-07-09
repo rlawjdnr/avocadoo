@@ -974,6 +974,12 @@ function getDeepLinkedEntryId() {
   return new URLSearchParams(window.location.search).get('entry') || '';
 }
 
+function getDeepLinkedCommentId() {
+  if (typeof window === 'undefined') return '';
+
+  return new URLSearchParams(window.location.search).get('comment') || '';
+}
+
 function getDeepLinkedMonthKey() {
   if (typeof window === 'undefined') return '';
 
@@ -3423,9 +3429,9 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   );
 }
 
-function CommentRow({ comment, onToggleCommentLike }) {
+function CommentRow({ comment, onToggleCommentLike, isTarget = false, rowRef }) {
   return (
-    <div className="comment-row">
+    <div ref={rowRef} className={isTarget ? 'comment-row comment-row-target' : 'comment-row'}>
       <div className="comment-copy">
         <img src={getMemberAvatarSrc(comment.nickname)} alt="" />
         <div>
@@ -3445,11 +3451,13 @@ function CommentRow({ comment, onToggleCommentLike }) {
   );
 }
 
-function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
+function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
+  const commentThreadRef = useRef(null);
+  const targetCommentRef = useRef(null);
   const replyEditorRef = useRef(null);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
@@ -3477,6 +3485,24 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
       window.visualViewport?.removeEventListener('scroll', updateKeyboardState);
     };
   }, []);
+
+  useEffect(() => {
+    if (!targetCommentId || !active) return undefined;
+
+    let frameId = 0;
+    frameId = window.requestAnimationFrame(() => {
+      const thread = commentThreadRef.current;
+      const target = targetCommentRef.current;
+      if (!thread || !target) return;
+
+      const threadRect = thread.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const targetTop = thread.scrollTop + targetRect.top - threadRect.top - 24;
+      thread.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [active, entry?.id, targetCommentId, comments.length]);
 
   async function submitReply(event) {
     event.preventDefault();
@@ -3519,11 +3545,17 @@ function CommentsScreen({ active = true, entry, transitionKind, onNavigate, onTo
     >
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={() => onNavigate('list')} />
-      <div className="comment-thread">
+      <div className="comment-thread" ref={commentThreadRef}>
         <DiaryItem entry={entry} detail onToggleLike={onToggleLike} onOpenComments={() => {}} onEdit={onEditEntry} />
         <div className="comments-list">
           {comments.map((comment) => (
-            <CommentRow key={comment.id} comment={comment} onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)} />
+            <CommentRow
+              key={comment.id}
+              comment={comment}
+              isTarget={comment.id === targetCommentId}
+              rowRef={comment.id === targetCommentId ? targetCommentRef : null}
+              onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)}
+            />
           ))}
         </div>
       </div>
@@ -4362,6 +4394,7 @@ export default function App() {
   const [availableDiaryMonthKeys, setAvailableDiaryMonthKeys] = useState([]);
   const [stickersByMonth, setStickersByMonth] = useState(readLocalStickers);
   const [selectedEntryId, setSelectedEntryId] = useState(null);
+  const [deepLinkedCommentId, setDeepLinkedCommentId] = useState('');
   const [shouldOpenUploadDatePicker, setShouldOpenUploadDatePicker] = useState(false);
   const [selectedNickname, setSelectedNickname] = useState(readSelectedNickname);
   const [isNicknamePickerOpen, setIsNicknamePickerOpen] = useState(false);
@@ -4597,32 +4630,40 @@ export default function App() {
     if (!isInitialDataLoaded) return;
 
     const entryId = getDeepLinkedEntryId();
-    if (!entryId || consumedDeepLinkedEntryId.current === entryId) return;
+    const commentId = getDeepLinkedCommentId();
+    const deepLinkKey = `${entryId}:${commentId}`;
+    if (!entryId || consumedDeepLinkedEntryId.current === deepLinkKey) return;
 
     let isMounted = true;
 
     async function openDeepLinkedEntry() {
       let linkedEntry = entries.find((entry) => entry.id === entryId);
 
-      if (!linkedEntry && hasSupabaseConfig) {
+      if (hasSupabaseConfig && (!linkedEntry || commentId)) {
         try {
-          linkedEntry = await fetchDiaryEntryById(entryId, selectedMemberId);
-          if (isMounted && linkedEntry) {
-            setEntriesAndCache((current) => mergeEntriesById(current, [linkedEntry]));
+          const freshEntry = await fetchDiaryEntryById(entryId, selectedMemberId);
+          if (freshEntry) {
+            linkedEntry = freshEntry;
+            if (isMounted) {
+              setEntriesAndCache((current) => mergeEntriesById(current, [freshEntry]));
+            }
           }
         } catch (error) {
-          if (isMounted) setLoadError(error.message || '링크된 일기를 불러오지 못했어요.');
-          return;
+          if (!linkedEntry) {
+            if (isMounted) setLoadError(error.message || '링크된 일기를 불러오지 못했어요.');
+            return;
+          }
         }
       }
 
       if (!isMounted || !linkedEntry) {
-        consumedDeepLinkedEntryId.current = entryId;
+        consumedDeepLinkedEntryId.current = deepLinkKey;
         return;
       }
 
-      consumedDeepLinkedEntryId.current = entryId;
+      consumedDeepLinkedEntryId.current = deepLinkKey;
       setSelectedEntryId(linkedEntry.id);
+      setDeepLinkedCommentId(commentId);
       setHomeMonth(getMonthStartForDate(linkedEntry.date));
       setSelectedWeek(getWeekForEntry(linkedEntry, mergeEntriesById(entries, [linkedEntry])));
       applyNavigation('comment', { pushHistory: false, animate: false });
@@ -4896,6 +4937,7 @@ export default function App() {
 
   function openComments(entry) {
     setSelectedEntryId(entry.id);
+    setDeepLinkedCommentId('');
     navigate('comment');
   }
 
@@ -5212,6 +5254,7 @@ export default function App() {
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
           entry={selectedEntry}
+          targetCommentId={deepLinkedCommentId}
           onNavigate={navigate}
           onToggleLike={toggleEntryLike}
           onToggleCommentLike={toggleCommentLike}

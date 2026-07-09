@@ -52,9 +52,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function buildNotification(eventType: PushEventType, nickname: string, entryId: string, siteUrl: string, month = '') {
+function buildNotification(eventType: PushEventType, nickname: string, entryId: string, siteUrl: string, month = '', commentId = '') {
   const url = new URL(siteUrl);
   if (entryId) url.searchParams.set('entry', entryId);
+  if (eventType === 'comment_created' && commentId) url.searchParams.set('comment', commentId);
   if (eventType === 'sticker_created' && /^\d{4}-\d{2}$/.test(month)) {
     url.searchParams.set('month', month);
   }
@@ -126,7 +127,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { eventType, actorMemberId, entryId, month } = body;
+  const { eventType, actorMemberId, entryId, commentId, month } = body;
   if (!eventType || !actorMemberId) {
     return jsonResponse({ error: 'eventType and actorMemberId are required' }, 400);
   }
@@ -196,7 +197,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: subscriptionsError.message }, 500);
   }
 
-  const notification = buildNotification(eventType, actor.nickname, entry?.id || '', siteUrl, month);
+  const notification = buildNotification(eventType, actor.nickname, entry?.id || '', siteUrl, month, commentId);
   webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
   const settled = await Promise.allSettled(
@@ -214,6 +215,7 @@ Deno.serve(async (request) => {
             ...notification,
             type: eventType,
             entryId: entry?.id || '',
+            commentId: commentId || '',
           })
         );
 
