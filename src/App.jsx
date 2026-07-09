@@ -3249,6 +3249,8 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   const entryRefs = useRef(new Map());
   const focusedWeekRef = useRef('');
   const scrollFrameRef = useRef(null);
+  const hasUserScrolledListRef = useRef(false);
+  const isProgrammaticListScrollRef = useRef(false);
   const selectedMonthKey = getMonthKeyForDate(selectedWeek.startDate);
   const monthEntries = useMemo(
     () => sortEntriesByDateAscending(entries.filter((entry) => getMonthKeyForDate(entry.date) === selectedMonthKey)),
@@ -3268,6 +3270,8 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   useEffect(() => {
     setVisibleWeek(weeksById.get(selectedWeek.id) || selectedWeek);
     focusedWeekRef.current = '';
+    hasUserScrolledListRef.current = false;
+    isProgrammaticListScrollRef.current = false;
     setRenderedEntryCount(listInitialRenderCount);
     setAutoExpandedEntryIds(new Set());
   }, [selectedWeek.id]);
@@ -3282,6 +3286,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
 
   useLayoutEffect(() => {
     if (!active || focusedWeekRef.current === selectedWeek.id) return;
+    if (hasUserScrolledListRef.current) return;
 
     const list = listRef.current;
     const targetEntry = monthEntries.find((entry) => entry.weekId === selectedWeek.id);
@@ -3294,9 +3299,11 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     const target = targetEntry ? entryRefs.current.get(targetEntry.id) : null;
     if (!list || !target) return;
 
+    isProgrammaticListScrollRef.current = true;
     list.scrollTo({ top: Math.max(0, target.offsetTop - listFocusedEntryInset), behavior: 'auto' });
     focusedWeekRef.current = selectedWeek.id;
     window.requestAnimationFrame(() => {
+      isProgrammaticListScrollRef.current = false;
       updateVisibleWeek();
       updateAutoExpandedEntry();
     });
@@ -3361,6 +3368,9 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   }
 
   function handleListScroll() {
+    if (!isProgrammaticListScrollRef.current) {
+      hasUserScrolledListRef.current = true;
+    }
     if (scrollFrameRef.current !== null) return;
 
     scrollFrameRef.current = window.requestAnimationFrame(() => {
@@ -5106,8 +5116,6 @@ export default function App() {
     if (typeof document === 'undefined') return undefined;
 
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
-    const initialSplash = document.getElementById('initial-splash');
-    initialSplash?.remove();
     document.body.classList.toggle('splash-active', showSplash);
     themeColorMeta?.setAttribute('content', showSplash ? '#ffffff' : '#FAF9F7');
 

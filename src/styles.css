@@ -1044,6 +1044,7 @@ body.splash-active .screen-stage {
   overflow-x: hidden;
   padding-bottom: 142px;
   overscroll-behavior: contain;
+  overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
 }
 
