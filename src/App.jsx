@@ -2688,7 +2688,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
   const expanded = isSinglePhoto || lockedExpanded || (controlledExpanded ?? isExpanded);
   const expandedWidth = visible.length * largePolaroidWidth + Math.max(0, visible.length - 1) * largePolaroidPressedGap;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (autoExpanded && !isSinglePhoto) setIsExpanded(true);
   }, [autoExpanded, isSinglePhoto]);
 
@@ -3253,6 +3253,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   const isProgrammaticListScrollRef = useRef(false);
   const restoredListStateRef = useRef('');
   const renderedEntryCountRef = useRef(listInitialRenderCount);
+  const autoExpandScrollTopRef = useRef(null);
   const savedScrollTop = Number.isFinite(savedListState?.scrollTop) ? savedListState.scrollTop : null;
   const savedRenderedEntryCount = Number.isFinite(savedListState?.renderedEntryCount) ? savedListState.renderedEntryCount : listInitialRenderCount;
   const selectedMonthKey = getMonthKeyForDate(selectedWeek.startDate);
@@ -3291,6 +3292,25 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
       renderedEntryCount,
     });
   }, [onSaveListState, renderedEntryCount, selectedWeek.id]);
+
+  useLayoutEffect(() => {
+    if (autoExpandScrollTopRef.current === null) return;
+
+    const list = listRef.current;
+    if (!list) {
+      autoExpandScrollTopRef.current = null;
+      return;
+    }
+
+    const preservedScrollTop = autoExpandScrollTopRef.current;
+    isProgrammaticListScrollRef.current = true;
+    list.scrollTop = preservedScrollTop;
+    window.requestAnimationFrame(() => {
+      list.scrollTop = preservedScrollTop;
+      isProgrammaticListScrollRef.current = false;
+      autoExpandScrollTopRef.current = null;
+    });
+  }, [autoExpandedEntryIds]);
 
   useEffect(() => () => {
     const list = listRef.current;
@@ -3410,6 +3430,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
     if (!nextEntryId) return;
     setAutoExpandedEntryIds((current) => {
       if (current.has(nextEntryId)) return current;
+      autoExpandScrollTopRef.current = list.scrollTop || 0;
       const next = new Set(current);
       next.add(nextEntryId);
       return next;
