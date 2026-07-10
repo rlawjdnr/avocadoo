@@ -3014,11 +3014,13 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
         <motion.div
           ref={stackRef}
           className={toggleEnabled ? 'large-stack large-stack-clickable' : 'large-stack'}
+          layout="position"
           initial={false}
           animate={{ scale: isStackPressed ? 0.97 : 1, width: expanded ? expandedWidth : largePolaroidCollapsedWidth }}
           transition={{
             scale: isStackPressed ? uploadButtonPressSpring : uploadButtonReleaseSpring,
             width: largePolaroidSpring,
+            layout: largePolaroidSpring,
           }}
           {...stackInteractionProps}
         >
