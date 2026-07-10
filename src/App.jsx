@@ -2925,13 +2925,16 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     return baseMotion;
   }
 
+  function getTopPhotoIndex() {
+    return visible.length > 1 ? 1 : 0;
+  }
+
   function getExpandedPhotoLeft(index) {
-    const slotIndex = visible.length - 1 - index;
-    return slotIndex * (largePolaroidWidth + largePolaroidPressedGap);
+    return index * (largePolaroidWidth + largePolaroidPressedGap);
   }
 
   function getPhotoZIndex(index) {
-    return index + 1;
+    return index === getTopPhotoIndex() ? visible.length + 1 : index + 1;
   }
 
   function getPhotoStyle(index, baseStyle = {}) {
