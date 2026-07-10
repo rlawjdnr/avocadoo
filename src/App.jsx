@@ -961,6 +961,23 @@ function formatWeekday(value) {
   return ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][date.getDay()];
 }
 
+function formatCommentCreatedAt(value) {
+  if (!value) return '';
+
+  const createdAt = new Date(value);
+  const createdAtTime = createdAt.getTime();
+  if (Number.isNaN(createdAtTime)) return '';
+
+  const diffMs = Date.now() - createdAtTime;
+  const diffMinutes = Math.max(1, Math.floor(diffMs / 60000));
+  if (diffMinutes < 60) return `${diffMinutes}분 전`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}시간 전`;
+
+  return `${createdAt.getMonth() + 1}월 ${createdAt.getDate()}일`;
+}
+
 function getWeekIdForDate(value) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return '';
@@ -3430,12 +3447,17 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
 }
 
 function CommentRow({ comment, onToggleCommentLike, isTarget = false, rowRef }) {
+  const createdAtText = formatCommentCreatedAt(comment.createdAt || comment.created_at);
+
   return (
     <div ref={rowRef} className={isTarget ? 'comment-row comment-row-target' : 'comment-row'}>
       <div className="comment-copy">
         <img src={getMemberAvatarSrc(comment.nickname)} alt="" />
         <div>
-          <strong>{comment.nickname}</strong>
+          <span className="comment-meta">
+            <strong>{comment.nickname}</strong>
+            {createdAtText ? <time dateTime={comment.createdAt || comment.created_at}>{createdAtText}</time> : null}
+          </span>
           <p>{comment.text}</p>
         </div>
       </div>
@@ -4666,6 +4688,7 @@ export default function App() {
       setDeepLinkedCommentId(commentId);
       setHomeMonth(getMonthStartForDate(linkedEntry.date));
       setSelectedWeek(getWeekForEntry(linkedEntry, mergeEntriesById(entries, [linkedEntry])));
+      pushDeepLinkedCommentHistoryState();
       applyNavigation('comment', { pushHistory: false, animate: false });
     }
 
@@ -4773,6 +4796,13 @@ export default function App() {
 
   function pushHomeHistoryState() {
     window.history.pushState(getHomeHistoryState('entry'), '', window.location.href);
+  }
+
+  function pushDeepLinkedCommentHistoryState() {
+    if (typeof window === 'undefined') return;
+
+    window.history.replaceState({ avocadooScreen: 'list', avocadooDeepLinkBase: true }, '', window.location.href);
+    window.history.pushState({ avocadooScreen: 'comment', avocadooDeepLink: true }, '', window.location.href);
   }
 
   function getScreenTransition(nextScreen) {
