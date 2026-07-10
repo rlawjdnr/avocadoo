@@ -1253,10 +1253,13 @@ function groupBy(items, getKey) {
   }, new Map());
 }
 
+const loadedPhotoSrcs = new Set();
+
 function PhotoImage({ photo, transform, eager = false }) {
   const originalSrc = getPhotoSrc(photo);
   const optimizedSrc = getOptimizedPhotoSrc(photo, transform);
   const [src, setSrc] = useState(optimizedSrc);
+  const isLoaded = loadedPhotoSrcs.has(src);
 
   useEffect(() => {
     setSrc(optimizedSrc);
@@ -1266,9 +1269,12 @@ function PhotoImage({ photo, transform, eager = false }) {
     <img
       src={src}
       alt=""
-      loading={eager ? 'eager' : 'lazy'}
-      decoding="async"
-      fetchPriority={eager ? 'high' : 'low'}
+      loading={eager || isLoaded ? 'eager' : 'lazy'}
+      decoding={eager || isLoaded ? 'sync' : 'async'}
+      fetchPriority={eager || isLoaded ? 'high' : 'low'}
+      onLoad={() => {
+        if (src) loadedPhotoSrcs.add(src);
+      }}
       onError={() => {
         if (src !== originalSrc) setSrc(originalSrc);
       }}
@@ -2919,8 +2925,13 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     return baseMotion;
   }
 
+  function getExpandedPhotoLeft(index) {
+    const slotIndex = visible.length - 1 - index;
+    return slotIndex * (largePolaroidWidth + largePolaroidPressedGap);
+  }
+
   function getPhotoZIndex(index) {
-    return 1;
+    return index + 1;
   }
 
   function getPhotoStyle(index, baseStyle = {}) {
@@ -2992,7 +3003,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
             style={getPhotoStyle(0, { left: 0, top: 0, transform: 'rotate(0deg)' })}
             {...photoInteractionProps(visible[0], 0)}
           >
-            <PhotoImage photo={visible[0]} transform={photoTransforms.list} />
+            <PhotoImage photo={visible[0]} transform={photoTransforms.list} eager={focusEnabled} />
           </StaticPhotoElement>
           {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
         </div>
@@ -3025,7 +3036,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               animate={
                 expanded
                   ? getPhotoMotion(index, {
-                      left: index * (largePolaroidWidth + largePolaroidPressedGap),
+                      left: getExpandedPhotoLeft(index),
                       rotate: 0,
                       top: 0,
                       x: 0,
@@ -3067,7 +3078,7 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
               style={getPhotoStyle(index)}
               {...photoInteractionProps(photo, index)}
             >
-              <PhotoImage photo={photo} transform={photoTransforms.list} />
+              <PhotoImage photo={photo} transform={photoTransforms.list} eager={focusEnabled} />
             </MotionPhotoElement>
           ))}
           {showDateLabel ? <span className="large-date">{dateLabel.replace('월 ', '/').replace('일', '')}</span> : null}
