@@ -3481,6 +3481,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   const commentThreadRef = useRef(null);
   const targetCommentRef = useRef(null);
   const replyEditorRef = useRef(null);
+  const isReplySendingRef = useRef(false);
   const comments = sortCommentsByCreatedAt(entry?.comments || []);
 
   useEffect(() => {
@@ -3526,17 +3527,34 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     return () => window.cancelAnimationFrame(frameId);
   }, [active, entry?.id, targetCommentId, comments.length]);
 
+  async function sendReply() {
+    if (isReplySendingRef.current) return;
+    const currentReply = replyEditorRef.current?.textContent || reply;
+    const trimmed = currentReply.trim();
+    if (!trimmed) return;
+    isReplySendingRef.current = true;
+    try {
+      await onAddComment(entry.id, trimmed);
+      setReply('');
+      if (replyEditorRef.current) replyEditorRef.current.textContent = '';
+    } finally {
+      isReplySendingRef.current = false;
+    }
+  }
+
   async function submitReply(event) {
     event.preventDefault();
-    const trimmed = reply.trim();
-    if (!trimmed) return;
-    await onAddComment(entry.id, trimmed);
-    setReply('');
-    if (replyEditorRef.current) replyEditorRef.current.textContent = '';
+    await sendReply();
   }
 
   function handleReplyInput(event) {
     setReply(event.currentTarget.textContent || '');
+  }
+
+  function handleReplySendPointerDown(event) {
+    if (!reply.trim() && !replyEditorRef.current?.textContent?.trim()) return;
+    event.preventDefault();
+    void sendReply();
   }
 
   function handleReplyKeyDown(event) {
@@ -3601,7 +3619,12 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
             onFocus={() => setIsReplyFocused(true)}
             onBlur={() => setIsReplyFocused(false)}
           />
-          <button className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'} type="submit" aria-label="답글 보내기">
+          <button
+            className={reply.trim() ? 'reply-send reply-send-active' : 'reply-send'}
+            type="submit"
+            aria-label="답글 보내기"
+            onPointerDown={handleReplySendPointerDown}
+          >
             <img src={assets.send} alt="" />
           </button>
         </div>
@@ -5189,7 +5212,8 @@ export default function App() {
   }
 
   const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'letter-to-home';
-  const showList = screen === 'list' || screenTransition === 'list-to-home' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
+  const keepListMountedBehindComment = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list';
+  const showList = screen === 'list' || keepListMountedBehindComment || screenTransition === 'list-to-home' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
   const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
   const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
@@ -5262,7 +5286,7 @@ export default function App() {
       {showList ? (
         <List
           key="list"
-          active={screen === 'list'}
+          active={screen === 'list' || keepListMountedBehindComment}
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
           entries={entries}

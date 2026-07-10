@@ -1586,7 +1586,7 @@ body.splash-active .screen-stage {
 }
 
 .comment-copy time {
-  margin-left: 2px;
+  margin-left: 4px;
   color: rgba(42, 48, 56, 0.58);
   font-size: 13px;
   font-weight: 400;
