@@ -68,7 +68,7 @@ const seededMemberIdsByNickname = {
 };
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 const notificationReadStorageKey = 'avocadoo.notifications.readAt.v1';
-const weeklySummaryStorageKey = 'avocadoo.weeklySummaries.v1';
+const weeklySummaryStorageKey = 'avocadoo.weeklySummaries.v2';
 const appThemeColor = '#FAF9F7';
 const appSplashThemeColor = '#ffffff';
 const appDimThemeColor = '#7d7c7a';
