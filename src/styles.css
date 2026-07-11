@@ -876,6 +876,10 @@ body.splash-active .screen-stage {
   line-height: 15px;
 }
 
+.week-summary-loading {
+  opacity: 0.62;
+}
+
 .week-polaroids {
   display: flex;
   align-items: center;

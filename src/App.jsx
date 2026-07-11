@@ -68,6 +68,7 @@ const seededMemberIdsByNickname = {
 };
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 const notificationReadStorageKey = 'avocadoo.notifications.readAt.v1';
+const weeklySummaryStorageKey = 'avocadoo.weeklySummaries.v1';
 const appThemeColor = '#FAF9F7';
 const appSplashThemeColor = '#ffffff';
 const appDimThemeColor = '#7d7c7a';
@@ -144,6 +145,7 @@ const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
 const notificationRetentionDays = 30;
 const diaryEntryFetchPageSize = 60;
+const weeklySummaryFunctionName = 'generate-weekly-summaries';
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
 const listLoadMoreThresholdPx = 900;
@@ -770,6 +772,101 @@ function writeLocalEntries(entries) {
   } catch {
     // Ignore quota/private-mode failures; Supabase remains the source of truth when configured.
   }
+}
+
+function readWeeklySummaryCache() {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const stored = window.localStorage.getItem(weeklySummaryStorageKey);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeWeeklySummaryCache(cache) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(weeklySummaryStorageKey, JSON.stringify(cache));
+  } catch {
+    // Summary cache is only an optimization. The default labels remain available.
+  }
+}
+
+function getWeekSummarySignature(weekEntries) {
+  return JSON.stringify(
+    sortEntriesByDateAscending(weekEntries).map((entry) => ({
+      id: entry.id,
+      date: entry.date,
+      location: entry.location || '',
+      text: entry.text || '',
+      photoCount: entry.photos?.length || 0,
+      commentCount: entry.commentCount || entry.comments?.length || 0,
+      likeCount: entry.likeCount || 0,
+    }))
+  );
+}
+
+function toWeeklySummaryPayload(entry) {
+  return {
+    id: entry.id,
+    date: entry.date,
+    weekday: entry.weekday || formatWeekday(entry.date),
+    nickname: entry.nickname || '',
+    location: entry.location || '',
+    text: entry.text || '',
+    photoCount: entry.photos?.length || 0,
+    commentCount: entry.commentCount || entry.comments?.length || 0,
+    likeCount: entry.likeCount || 0,
+  };
+}
+
+function buildWeeklySummaryRequest(monthDate, entries) {
+  const weeks = buildMonthWeeks(monthDate);
+  const monthEntries = entries.filter((entry) => getMonthKeyForDate(entry.date) === getMonthKey(monthDate));
+
+  return weeks
+    .map((week) => {
+      const weekEntries = sortEntriesByDateAscending(monthEntries.filter((entry) => entry.weekId === week.id));
+      return {
+        id: week.id,
+        range: week.range,
+        signature: getWeekSummarySignature(weekEntries),
+        entries: weekEntries.map(toWeeklySummaryPayload),
+      };
+    })
+    .filter((week) => week.entries.length > 0);
+}
+
+async function fetchWeeklySummaries(monthDate, entries) {
+  if (!hasSupabaseConfig || !supabase?.functions?.invoke) return {};
+
+  const monthKey = getMonthKey(monthDate);
+  const weeks = buildWeeklySummaryRequest(monthDate, entries);
+  if (weeks.length === 0) return {};
+
+  const { data, error } = await supabase.functions.invoke(weeklySummaryFunctionName, {
+    body: {
+      spaceId: coupleSpaceId,
+      monthKey,
+      weeks: weeks.map(({ id, range, entries: weekEntries }) => ({ id, range, entries: weekEntries })),
+    },
+  });
+
+  if (error) throw error;
+
+  const summaries = data?.summaries;
+  if (!summaries || typeof summaries !== 'object') return {};
+
+  return weeks.reduce((nextSummaries, week) => {
+    const label = String(summaries[week.id] || '').trim();
+    if (label) nextSummaries[week.id] = { label, signature: week.signature };
+    return nextSummaries;
+  }, {});
 }
 
 function isWebPushSupported() {
@@ -1413,19 +1510,22 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
   };
 }
 
-function applyEntriesToWeeks(weeks, entries) {
+function getDefaultWeekSummaryLabel(weekEntries, summaryStatus = 'fallback') {
+  if (weekEntries.length === 0) return '이번 주는 쉬어감';
+  return summaryStatus === 'loading' ? '하이라이트 뽑는 중' : '하이라이트 준비 중';
+}
+
+function applyEntriesToWeeks(weeks, entries, summariesByWeek = {}) {
   return weeks.map((week) => {
     const weekEntries = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id));
     const photos = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id && entry.photos.length > 0))
       .map((entry) => entry.photos[0])
       .slice(0, 4);
-    const locations = [...new Set(weekEntries.map((entry) => (entry.location || '').trim()).filter(Boolean))].slice(0, 2);
-    const label =
-      weekEntries.length === 0
-        ? '안 만난 주ㅠㅠ'
-        : `${locations.length > 0 ? locations.join(',') : '어딘가'}에서 ${weekEntries.length}번 만남`;
+    const summary = summariesByWeek[week.id];
+    const summaryStatus = summary?.status || 'fallback';
+    const label = summary?.label || getDefaultWeekSummaryLabel(weekEntries, summaryStatus);
 
-    return { ...week, label, photos };
+    return { ...week, label, photos, summaryStatus };
   });
 }
 
@@ -2010,7 +2110,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
                 <>
                   <span className="week-copy">
                     <strong>{week.range}</strong>
-                    <em>{week.label}</em>
+                    <em className={week.summaryStatus === 'loading' ? 'week-summary-loading' : ''}>{week.label}</em>
                   </span>
                   <PhotoStack photos={week.photos} onAdd={week.isFuture ? undefined : () => onSelectWeek(week, 'upload', 'add-polaroid')} />
                 </>
@@ -2246,11 +2346,14 @@ function Home({
   const editingStickersRef = useRef([]);
   const selectedStickerIdRef = useRef('');
   const seededDefaultStickerId = useRef('');
+  const pendingSummaryMonthKeys = useRef(new Set());
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
   const [stickerBounce, setStickerBounce] = useState({ key: 0, ids: [] });
   const [monthScrollTops, setMonthScrollTops] = useState({});
+  const [weeklySummariesByMonth, setWeeklySummariesByMonth] = useState(readWeeklySummaryCache);
+  const [loadingSummaryMonthKeys, setLoadingSummaryMonthKeys] = useState(() => new Set());
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthIndexRef = useRef(activeMonthIndex);
@@ -2262,11 +2365,29 @@ function Home({
 
     renderableMonthIndexes.forEach((index) => {
       const month = monthPages[index];
-      if (month) nextMonthWeeks.set(month.key, applyEntriesToWeeks(buildMonthWeeks(month.date), entries));
+      if (!month) return;
+
+      const requestWeeks = buildWeeklySummaryRequest(month.date, entries);
+      const requestWeeksById = new Map(requestWeeks.map((week) => [week.id, week]));
+      const storedSummaries = weeklySummariesByMonth[month.key] || {};
+      const summariesByWeek = {};
+
+      buildMonthWeeks(month.date).forEach((week) => {
+        const requestWeek = requestWeeksById.get(week.id);
+        const storedSummary = storedSummaries[week.id];
+
+        if (requestWeek && storedSummary?.signature === requestWeek.signature && storedSummary.label) {
+          summariesByWeek[week.id] = { label: storedSummary.label, status: 'ready' };
+        } else if (requestWeek && loadingSummaryMonthKeys.has(month.key)) {
+          summariesByWeek[week.id] = { status: 'loading' };
+        }
+      });
+
+      nextMonthWeeks.set(month.key, applyEntriesToWeeks(buildMonthWeeks(month.date), entries, summariesByWeek));
     });
 
     return nextMonthWeeks;
-  }, [entries, monthPages, renderableMonthIndexes]);
+  }, [entries, loadingSummaryMonthKeys, monthPages, renderableMonthIndexes, weeklySummariesByMonth]);
   const activeWeeks = monthWeeksByKey.get(getMonthKey(activeMonthDate)) || [];
   const activeMonthKey = getMonthKey(activeMonthDate);
   const activeMonthScrollTop = monthScrollTops[activeMonthKey] || 0;
@@ -2280,6 +2401,73 @@ function Home({
   useEffect(() => {
     activeMonthIndexRef.current = activeMonthIndex;
   }, [activeMonthIndex]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) return undefined;
+
+    let isCancelled = false;
+    const cache = readWeeklySummaryCache();
+    const monthsToLoad = [];
+
+    renderableMonthIndexes.forEach((index) => {
+      const month = monthPages[index];
+      if (!month || pendingSummaryMonthKeys.current.has(month.key)) return;
+
+      const requestWeeks = buildWeeklySummaryRequest(month.date, entries);
+      if (requestWeeks.length === 0) return;
+
+      const cachedMonth = {
+        ...(cache[month.key] || {}),
+        ...(weeklySummariesByMonth[month.key] || {}),
+      };
+      const hasMissingSummary = requestWeeks.some((week) => cachedMonth[week.id]?.signature !== week.signature || !cachedMonth[week.id]?.label);
+      if (hasMissingSummary) monthsToLoad.push(month);
+    });
+
+    if (monthsToLoad.length === 0) return undefined;
+
+    monthsToLoad.forEach((month) => pendingSummaryMonthKeys.current.add(month.key));
+    setLoadingSummaryMonthKeys((current) => {
+      const next = new Set(current);
+      monthsToLoad.forEach((month) => next.add(month.key));
+      return next;
+    });
+
+    monthsToLoad.forEach((month) => {
+      fetchWeeklySummaries(month.date, entries)
+        .then((summaries) => {
+          if (isCancelled || Object.keys(summaries).length === 0) return;
+
+          setWeeklySummariesByMonth((current) => {
+            const next = {
+              ...current,
+              [month.key]: {
+                ...(current[month.key] || {}),
+                ...summaries,
+              },
+            };
+            writeWeeklySummaryCache(next);
+            return next;
+          });
+        })
+        .catch((error) => {
+          console.warn('Weekly summaries unavailable:', error);
+        })
+        .finally(() => {
+          pendingSummaryMonthKeys.current.delete(month.key);
+          if (isCancelled) return;
+          setLoadingSummaryMonthKeys((current) => {
+            const next = new Set(current);
+            next.delete(month.key);
+            return next;
+          });
+        });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [entries, monthPages, renderableMonthIndexes, weeklySummariesByMonth]);
 
   useEffect(() => {
     editingStickersRef.current = editingStickers;
