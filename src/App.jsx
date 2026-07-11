@@ -2363,6 +2363,7 @@ function Home({
   const [monthScrollTops, setMonthScrollTops] = useState({});
   const [weeklySummariesByMonth, setWeeklySummariesByMonth] = useState(readWeeklySummaryCache);
   const [loadingSummaryMonthKeys, setLoadingSummaryMonthKeys] = useState(() => new Set());
+  const [failedSummaryMonthKeys, setFailedSummaryMonthKeys] = useState(() => new Set());
   const monthPages = useMemo(() => buildHomeMonthPages(), []);
   const [activeMonthIndex, setActiveMonthIndex] = useState(() => getMonthIndex(monthPages, monthDate));
   const activeMonthIndexRef = useRef(activeMonthIndex);
@@ -2420,7 +2421,7 @@ function Home({
 
     renderableMonthIndexes.forEach((index) => {
       const month = monthPages[index];
-      if (!month || pendingSummaryMonthKeys.current.has(month.key)) return;
+      if (!month || pendingSummaryMonthKeys.current.has(month.key) || failedSummaryMonthKeys.has(month.key)) return;
 
       const requestWeeks = buildWeeklySummaryRequest(month.date, entries);
       if (requestWeeks.length === 0) return;
@@ -2461,6 +2462,11 @@ function Home({
         })
         .catch((error) => {
           console.warn('Weekly summaries unavailable:', error);
+          setFailedSummaryMonthKeys((current) => {
+            const next = new Set(current);
+            next.add(month.key);
+            return next;
+          });
         })
         .finally(() => {
           pendingSummaryMonthKeys.current.delete(month.key);
@@ -2476,7 +2482,7 @@ function Home({
     return () => {
       isCancelled = true;
     };
-  }, [entries, monthPages, renderableMonthIndexes, weeklySummariesByMonth]);
+  }, [entries, failedSummaryMonthKeys, monthPages, renderableMonthIndexes, weeklySummariesByMonth]);
 
   useEffect(() => {
     editingStickersRef.current = editingStickers;
