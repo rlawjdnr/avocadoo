@@ -28,6 +28,8 @@ const assets = {
   avatarJeongNeutral: './assets/profile-jeong.svg',
   heart: './assets/icon-heart.svg',
   heartBadge: './assets/icon-heart-badge.svg',
+  notification: './assets/icon-notification-empty.svg',
+  notificationUnread: './assets/icon-notification.svg',
   likeOutline: './assets/icon-like-outline.svg',
   likeFilled: './assets/icon-like-filled.svg',
   comment: './assets/icon-comment.svg',
@@ -65,6 +67,10 @@ const seededMemberIdsByNickname = {
   정정욱: '22222222-2222-4222-8222-222222222221',
 };
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
+const notificationReadStorageKey = 'avocadoo.notifications.readAt.v1';
+const appThemeColor = '#FAF9F7';
+const appSplashThemeColor = '#ffffff';
+const appDimThemeColor = '#7d7c7a';
 
 const uploadButtonRadiusSpring = {
   type: 'spring',
@@ -136,6 +142,7 @@ const screenPushTransition = {
 const defaultScreenPushDistance = 390;
 const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
+const notificationRetentionDays = 30;
 const diaryEntryFetchPageSize = 60;
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
@@ -230,6 +237,12 @@ const focusedPolaroidReturnSpring = {
 const focusedPolaroidOriginYRatio = 0.08;
 const focusedPolaroidRestShadow = '-1px 0 2px 1px rgba(0, 0, 0, 0.09)';
 const focusedPolaroidLiftShadow = '0 20px 42px rgba(0, 0, 0, 0.26)';
+const dimmedScreenTransitions = new Set([
+  'home-to-list',
+  'home-to-notifications',
+  'list-to-comment',
+  'notifications-to-comment',
+]);
 
 const focusedPolaroidLayoutTransition = {
   x: focusedPolaroidSpring,
@@ -305,7 +318,8 @@ function triggerStickerModeHaptic() {
 function getBackScreen(screen, previousScreen) {
   if (screen === 'list') return 'home';
   if (screen === 'letter') return 'home';
-  if (screen === 'comment') return 'list';
+  if (screen === 'notifications') return 'home';
+  if (screen === 'comment') return previousScreen === 'notifications' ? 'notifications' : 'list';
   if (screen === 'edit') return previousScreen === 'comment' ? 'comment' : 'list';
   if (screen === 'upload') return previousScreen === 'list' ? 'list' : 'home';
   return null;
@@ -352,6 +366,18 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
     }
   }
 
+  if (transitionKind === 'home-to-notifications') {
+    if (screenName === 'home') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'notifications') {
+      return {
+        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
+        animate: { x: 0, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
   if (transitionKind === 'list-to-comment') {
     if (screenName === 'list') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'comment') {
@@ -367,6 +393,42 @@ function screenMotionProps(screenName, transitionKind, active = true, screenPush
   if (transitionKind === 'list-to-home') {
     if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
     if (screenName === 'list') {
+      return {
+        initial: { boxShadow: coveringPageShadow },
+        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'notifications-to-home') {
+    if (screenName === 'home') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'notifications') {
+      return {
+        initial: { boxShadow: coveringPageShadow },
+        animate: { x: screenPushDistance, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'notifications-to-comment') {
+    if (screenName === 'notifications') return { animate: { x: coveredPageOffset }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'comment') {
+      return {
+        initial: { x: screenPushDistance, boxShadow: coveringPageShadow },
+        animate: { x: 0, boxShadow: restingPageShadow },
+        style: { zIndex: 2 },
+        transition: screenPushShadowTransition,
+      };
+    }
+  }
+
+  if (transitionKind === 'comment-to-notifications') {
+    if (screenName === 'notifications') return { animate: { x: 0 }, style: { zIndex: 1 }, transition: coveredPageTransition };
+    if (screenName === 'comment') {
       return {
         initial: { boxShadow: coveringPageShadow },
         animate: { x: screenPushDistance, boxShadow: restingPageShadow },
@@ -890,6 +952,30 @@ function writeSelectedNickname(nickname) {
   }
 }
 
+function getNotificationReadStorageId(memberId) {
+  return `${notificationReadStorageKey}.${memberId || currentMemberId}`;
+}
+
+function readNotificationReadAt(memberId = currentMemberId) {
+  if (typeof window === 'undefined') return '';
+
+  try {
+    return window.localStorage.getItem(getNotificationReadStorageId(memberId)) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeNotificationReadAt(memberId = currentMemberId, value = new Date().toISOString()) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(getNotificationReadStorageId(memberId), value);
+  } catch {
+    // Ignore storage failures; the red dot can recover on the next read.
+  }
+}
+
 function createPhotoPreviewUrl(file) {
   return URL.createObjectURL(file);
 }
@@ -1044,6 +1130,9 @@ function normalizeSticker(sticker, fallbackId = '') {
     coordinateSpace: sticker?.coordinateSpace === 'month-content' ? 'month-content' : 'viewport',
     scale: Number.isFinite(sticker?.scale) ? Math.min(Math.max(sticker.scale, stickerScaleLimit.min), stickerScaleLimit.max) : defaultStickerPosition.scale,
     rotation: Number.isFinite(sticker?.rotation) ? sticker.rotation : defaultStickerPosition.rotation,
+    createdAt: sticker?.createdAt || sticker?.created_at || '',
+    createdBy: sticker?.createdBy || sticker?.created_by || '',
+    createdByNickname: sticker?.createdByNickname || sticker?.created_by_nickname || '',
   };
 }
 
@@ -1106,7 +1195,17 @@ function normalizeStickersByMonth(rows) {
   return Object.fromEntries(
     (rows || []).map((row) => [
       row.month_key,
-      Array.isArray(row.stickers) ? row.stickers.map((sticker, index) => normalizeSticker(sticker, `${row.month_key}-${index}`)) : [],
+      Array.isArray(row.stickers)
+        ? row.stickers.map((sticker, index) => {
+          const normalizedSticker = normalizeSticker(sticker, `${row.month_key}-${index}`);
+          return {
+            ...normalizedSticker,
+            createdAt: normalizedSticker.createdAt || row.updated_at || '',
+            createdBy: normalizedSticker.createdBy || row.updated_by || '',
+            createdByNickname: normalizedSticker.createdByNickname || (row.updated_by ? getNicknameForMemberId(row.updated_by) : ''),
+          };
+        })
+        : [],
     ])
   );
 }
@@ -1138,6 +1237,135 @@ function getWeekForEntry(entry, entries) {
     isFuture: false,
     photos: entry.photos || [],
   };
+}
+
+function getNotificationTimeValue(value, fallback = '') {
+  const time = new Date(value || fallback || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function formatNotificationTime(value) {
+  const date = new Date(value);
+  const time = date.getTime();
+  if (Number.isNaN(time)) return '';
+
+  const diffMs = Date.now() - time;
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < minuteMs) return '방금';
+  if (diffMs < hourMs) return `${Math.floor(diffMs / minuteMs)}분 전`;
+  if (diffMs < dayMs) return `${Math.floor(diffMs / hourMs)}시간 전`;
+  if (diffMs < 7 * dayMs) return `${Math.floor(diffMs / dayMs)}일 전`;
+  return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function getMonthKeyNotificationLabel(monthKey) {
+  const [year, month] = String(monthKey || '').split('-');
+  if (!year || !month) return '홈';
+  return `${Number(month)}월`;
+}
+
+function getNotificationNickname(nickname, memberId = '') {
+  if (memberNicknames.includes(nickname)) return nickname;
+  if (memberId) return getNicknameForMemberId(memberId);
+  return normalizeSelectedNickname(currentMemberNickname);
+}
+
+function buildNotifications(entries, currentNickname = currentMemberNickname, stickersByMonth = {}) {
+  const notifications = [];
+  const retentionCutoff = Date.now() - notificationRetentionDays * 24 * 60 * 60 * 1000;
+
+  entries.forEach((entry) => {
+    const entryCreatedAt = entry.createdAt || entry.created_at || entry.date;
+    const entryTime = getNotificationTimeValue(entryCreatedAt, entry.date);
+    const entryDateLabel = entry.dateLabel || formatDateLabel(entry.date);
+    const entryNickname = getNotificationNickname(entry.nickname, entry.author_id || entry.authorId);
+
+    if (memberNicknames.includes(entryNickname)) {
+      notifications.push({
+        id: `diary-created-${entry.id}`,
+        type: 'diary_created',
+        entryId: entry.id,
+        title: entryNickname,
+        message: `${entryDateLabel} 일기를 작성했어요.`,
+        createdAt: entryCreatedAt,
+        timeValue: entryTime,
+      });
+    }
+
+    if (memberNicknames.includes(entryNickname) && (entry.likeCount || 0) > 0) {
+      const likeNickname = getPartnerNickname(entryNickname);
+      notifications.push({
+        id: `diary-liked-${entry.id}-${entry.likeCount}`,
+        type: 'diary_liked',
+        entryId: entry.id,
+        title: likeNickname,
+        message: `${entryDateLabel} 일기에 좋아요를 남겼어요.`,
+        createdAt: entryCreatedAt,
+        timeValue: entryTime - 1,
+      });
+    }
+
+    (entry.comments || []).forEach((comment) => {
+      const commentCreatedAt = comment.createdAt || comment.created_at || entryCreatedAt;
+      const commentTime = getNotificationTimeValue(commentCreatedAt, entryCreatedAt);
+      const commentNickname = getNotificationNickname(comment.nickname, comment.author_id || comment.authorId);
+
+      if (memberNicknames.includes(commentNickname)) {
+        notifications.push({
+          id: `comment-created-${comment.id}`,
+          type: 'comment_created',
+          entryId: entry.id,
+          commentId: comment.id,
+          title: commentNickname,
+          message: '댓글을 달았어요.',
+          preview: comment.text || '',
+          createdAt: commentCreatedAt,
+          timeValue: commentTime,
+        });
+      }
+    });
+  });
+
+  Object.entries(stickersByMonth || {}).forEach(([monthKey, stickers]) => {
+    const stickerGroups = new Map();
+
+    (stickers || []).forEach((sticker) => {
+      const createdAt = sticker.createdAt || sticker.created_at;
+      const timeValue = getNotificationTimeValue(createdAt);
+      if (!timeValue) return;
+
+      const nickname = getNotificationNickname(sticker.createdByNickname || sticker.created_by_nickname, sticker.createdBy || sticker.created_by);
+      const key = `${monthKey}-${nickname}-${createdAt}`;
+      const currentGroup = stickerGroups.get(key) || {
+        count: 0,
+        createdAt,
+        monthKey,
+        nickname,
+        timeValue,
+      };
+      currentGroup.count += 1;
+      stickerGroups.set(key, currentGroup);
+    });
+
+    stickerGroups.forEach((group) => {
+      notifications.push({
+        id: `sticker-created-${group.monthKey}-${group.nickname}-${group.createdAt}`,
+        type: 'sticker_created',
+        monthKey: group.monthKey,
+        title: group.nickname,
+        message: `${getMonthKeyNotificationLabel(group.monthKey)}에 ${group.count > 1 ? `새 스티커 ${group.count}개를` : '새로운 스티커를'} 붙였어요.`,
+        createdAt: group.createdAt,
+        timeValue: group.timeValue,
+      });
+    });
+  });
+
+  return notifications
+    .filter((notification) => notification.timeValue >= retentionCutoff)
+    .sort((a, b) => b.timeValue - a.timeValue);
 }
 
 function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
@@ -1401,7 +1629,30 @@ function UploadButton({ className = 'floating-upload', onNavigate, reverseFromBi
   return <motion.span className="floating-upload-anchor">{button}</motion.span>;
 }
 
-function HomeHeader({ monthDate, monthOptions = [], onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname }) {
+function NotificationButton({ hasUnread = false, onClick }) {
+  const [isPressed, setIsPressed] = useState(false);
+  const releasePress = () => setIsPressed(false);
+
+  return (
+    <motion.button
+      className="notification-button"
+      type="button"
+      aria-label={hasUnread ? '읽지 않은 알림 보기' : '알림함 보기'}
+      initial={false}
+      animate={{ scale: isPressed ? 0.94 : 1 }}
+      transition={isPressed ? polaroidPressSpring : polaroidReleaseSpring}
+      onPointerDown={() => setIsPressed(true)}
+      onPointerUp={releasePress}
+      onPointerCancel={releasePress}
+      onPointerLeave={releasePress}
+      onClick={onClick}
+    >
+      <img src={hasUnread ? assets.notificationUnread : assets.notification} alt="" />
+    </motion.button>
+  );
+}
+
+function HomeHeader({ monthDate, monthOptions = [], onSelectMonth, onOpenNicknamePicker, currentNickname = currentMemberNickname, hasUnreadNotifications = false, onOpenNotifications }) {
   const [isPressed, setIsPressed] = useState(false);
   const [isCouplePressed, setIsCouplePressed] = useState(false);
   const monthSelectRef = useRef(null);
@@ -1464,26 +1715,60 @@ function HomeHeader({ monthDate, monthOptions = [], onSelectMonth, onOpenNicknam
           ))}
         </select>
       </motion.button>
-      <motion.button
-        className="couple-state"
-        type="button"
-        aria-label="닉네임 선택"
-        initial={false}
-        animate={{ scale: isCouplePressed ? 0.94 : 1 }}
-        transition={isCouplePressed ? polaroidPressSpring : polaroidReleaseSpring}
-        onPointerDown={() => setIsCouplePressed(true)}
-        onPointerUp={releaseCouplePress}
-        onPointerCancel={releaseCouplePress}
-        onPointerLeave={releaseCouplePress}
-        onClick={onOpenNicknamePicker}
-      >
-        <img className={normalizeSelectedNickname(currentNickname) === '정정욱' ? 'couple-avatar-selected' : ''} src={assets.avatarJeongNeutral} alt="" />
-        <img className={normalizeSelectedNickname(currentNickname) === '혜민민' ? 'couple-avatar-selected' : ''} src={assets.avatarHemin} alt="" />
-        <span>
-          <img src={assets.heartBadge} alt="" />
-        </span>
-      </motion.button>
+      <div className="home-header-actions">
+        <motion.button
+          className="couple-state"
+          type="button"
+          aria-label="닉네임 선택"
+          initial={false}
+          animate={{ scale: isCouplePressed ? 0.94 : 1 }}
+          transition={isCouplePressed ? polaroidPressSpring : polaroidReleaseSpring}
+          onPointerDown={() => setIsCouplePressed(true)}
+          onPointerUp={releaseCouplePress}
+          onPointerCancel={releaseCouplePress}
+          onPointerLeave={releaseCouplePress}
+          onClick={onOpenNicknamePicker}
+        >
+          <img className={normalizeSelectedNickname(currentNickname) === '정정욱' ? 'couple-avatar-selected' : ''} src={assets.avatarJeongNeutral} alt="" />
+          <img className={normalizeSelectedNickname(currentNickname) === '혜민민' ? 'couple-avatar-selected' : ''} src={assets.avatarHemin} alt="" />
+          <span>
+            <img src={assets.heartBadge} alt="" />
+          </span>
+        </motion.button>
+        <NotificationButton hasUnread={hasUnreadNotifications} onClick={onOpenNotifications} />
+      </div>
     </header>
+  );
+}
+
+function NotificationInboxScreen({ active = true, notifications = [], transitionKind, screenPushDistance, onNavigate, onSelectNotification }) {
+  return (
+    <motion.section className="phone notification-screen" {...screenMotionProps('notifications', transitionKind, active, screenPushDistance)}>
+      <img className="paper-bg" src={assets.bg} alt="" />
+      <NavHeader title="알림" sub={`최근 ${notificationRetentionDays}일`} onNavigate={onNavigate} />
+      <main className="notification-page-list">
+        {notifications.length > 0 ? (
+          notifications.map((notification) => (
+            <button className="notification-item" type="button" key={notification.id} onClick={() => onSelectNotification(notification)}>
+              <img className="notification-item-avatar" src={getMemberAvatarSrc(notification.title)} alt="" />
+              <span className="notification-item-copy">
+                <strong>{notification.title}</strong>
+                <span>{notification.message}</span>
+                {notification.preview ? <em>{notification.preview}</em> : null}
+              </span>
+              <time dateTime={notification.createdAt}>{formatNotificationTime(notification.createdAt)}</time>
+            </button>
+          ))
+        ) : (
+          <div className="notification-empty">
+            <img src={assets.notification} alt="" />
+            <strong>최근 알림이 없어요</strong>
+            <span>최근 {notificationRetentionDays}일 안에 생긴 일기와 댓글만 모아둘게요.</span>
+          </div>
+        )}
+      </main>
+      <CoveredPageDim visible={transitionKind === 'notifications-to-comment'} />
+    </motion.section>
   );
 }
 
@@ -1946,6 +2231,8 @@ function Home({
   currentNickname = currentMemberNickname,
   activeMemberId = currentMemberId,
   onOpenNicknamePicker,
+  hasUnreadNotifications = false,
+  onOpenNotifications,
 }) {
   const dragBlockedClick = useRef(false);
   const monthViewportRef = useRef(null);
@@ -2306,6 +2593,10 @@ function Home({
     moveToMonth(nextMonthIndex, monthViewportRef.current);
   }
 
+  function openNotificationInbox() {
+    onOpenNotifications?.();
+  }
+
   function blockHomeTouchWhilePicking(event) {
     if (!isStickerPickerOpenRef.current) return;
     if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable')) return;
@@ -2547,7 +2838,19 @@ function Home({
   function applySticker() {
     const previousStickers = (stickersByMonth[activeMonthKey] || []).map((sticker) => toMonthContentSticker(sticker));
     const previousStickersById = new Map(previousStickers.map((sticker) => [sticker.id, sticker]));
-    const nextStickers = editingStickers.map((sticker) => toMonthContentSticker(sticker));
+    const createdAt = new Date().toISOString();
+    const nextStickers = editingStickers.map((sticker) => {
+      const nextSticker = toMonthContentSticker(sticker);
+      const previousSticker = previousStickersById.get(nextSticker.id);
+      if (previousSticker) return nextSticker;
+
+      return {
+        ...nextSticker,
+        createdAt: nextSticker.createdAt || createdAt,
+        createdBy: nextSticker.createdBy || activeMemberId,
+        createdByNickname: nextSticker.createdByNickname || currentNickname,
+      };
+    });
     const changedStickerIds = nextStickers
       .filter((sticker) => !isSameSticker(previousStickersById.get(sticker.id), sticker))
       .map((sticker) => sticker.id);
@@ -2590,6 +2893,8 @@ function Home({
         onSelectMonth={handleSelectMonth}
         onOpenNicknamePicker={onOpenNicknamePicker}
         currentNickname={currentNickname}
+        hasUnreadNotifications={hasUnreadNotifications}
+        onOpenNotifications={openNotificationInbox}
       />
       <div
         className="home-month-viewport"
@@ -2641,7 +2946,7 @@ function Home({
           />
         ) : null}
       </AnimatePresence>
-      <CoveredPageDim visible={transitionKind === 'home-to-list'} />
+      <CoveredPageDim visible={transitionKind === 'home-to-list' || transitionKind === 'home-to-notifications'} />
     </motion.section>
   );
 }
@@ -2728,13 +3033,13 @@ function LargePolaroidStack({ photos = [], dateLabel = '', defaultExpanded = fal
     document.body.classList.toggle('large-photo-target-focus-active', Boolean(isFocusActive));
     document.body.classList.toggle('large-photo-dim-active', Boolean(isDimActive));
     if (!document.body.classList.contains('splash-active')) {
-      themeColorMeta?.setAttribute('content', isDimActive ? '#7d7c7a' : '#FAF9F7');
+      themeColorMeta?.setAttribute('content', isDimActive ? appDimThemeColor : appThemeColor);
     }
     return () => {
       document.body.classList.remove('large-photo-target-focus-active');
       document.body.classList.remove('large-photo-dim-active');
-      if (!document.body.classList.contains('splash-active')) {
-        themeColorMeta?.setAttribute('content', '#FAF9F7');
+      if (!document.body.classList.contains('splash-active') && !document.body.classList.contains('app-dim-active')) {
+        themeColorMeta?.setAttribute('content', appThemeColor);
       }
     };
   }, [focusEnabled, focusedPhoto, returningPhotoIndex]);
@@ -4166,7 +4471,7 @@ async function fetchHomeStickers() {
 
   const { data, error } = await supabase
     .from('home_stickers')
-    .select('month_key, stickers')
+    .select('month_key, stickers, updated_by, updated_at')
     .eq('space_id', coupleSpaceId);
 
   if (error) {
@@ -4481,7 +4786,11 @@ export default function App() {
   const memberPair = useMemo(() => getMemberPairForNickname(selectedNickname), [selectedNickname]);
   const selectedMemberId = memberPair.selectedMemberId;
   const selectedMemberNickname = memberPair.selectedNickname;
+  const [notificationReadAt, setNotificationReadAt] = useState(() => readNotificationReadAt(selectedMemberId));
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || entries.find((entry) => entry.weekId === selectedWeek.id);
+  const notifications = useMemo(() => buildNotifications(entries, selectedMemberNickname, stickersByMonth), [entries, selectedMemberNickname, stickersByMonth]);
+  const notificationReadTime = getNotificationTimeValue(notificationReadAt);
+  const hasUnreadNotifications = notifications.some((notification) => notification.timeValue > notificationReadTime);
   const isPushConfigured = isWebPushConfigured();
   const isPushSupported = isWebPushSupported();
   const canShowPushPrompt =
@@ -4581,6 +4890,10 @@ export default function App() {
     if (!isInitialDataLoaded) return;
     void loadDiaryMonth(homeMonth, selectedMemberId);
   }, [homeMonth, isInitialDataLoaded, selectedMemberId]);
+
+  useEffect(() => {
+    setNotificationReadAt(readNotificationReadAt(selectedMemberId));
+  }, [selectedMemberId]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -4849,23 +5162,31 @@ export default function App() {
 
     return currentScreen === 'home' && nextScreen === 'list'
       ? 'home-to-list'
-        : currentScreen === 'list' && nextScreen === 'home'
-          ? 'list-to-home'
+      : currentScreen === 'home' && nextScreen === 'notifications'
+        ? 'home-to-notifications'
+        : currentScreen === 'notifications' && nextScreen === 'home'
+          ? 'notifications-to-home'
           : currentScreen === 'letter' && nextScreen === 'home'
             ? 'letter-to-home'
-            : currentScreen === 'list' && nextScreen === 'comment'
-              ? 'list-to-comment'
-              : currentScreen === 'comment' && nextScreen === 'list'
-                ? 'comment-to-list'
-                : currentScreen === 'list' && nextScreen === 'edit'
-                  ? 'list-to-edit'
-                  : currentScreen === 'comment' && nextScreen === 'edit'
-                    ? 'comment-to-edit'
-                    : currentScreen === 'edit' && nextScreen === 'comment'
-                      ? 'edit-to-comment'
-                      : currentScreen === 'edit' && nextScreen === 'list'
-                        ? 'edit-to-list'
-                        : 'none';
+            : currentScreen === 'list' && nextScreen === 'home'
+              ? 'list-to-home'
+              : currentScreen === 'list' && nextScreen === 'comment'
+                ? 'list-to-comment'
+                : currentScreen === 'notifications' && nextScreen === 'comment'
+                  ? 'notifications-to-comment'
+                  : currentScreen === 'comment' && nextScreen === 'notifications'
+                    ? 'comment-to-notifications'
+                    : currentScreen === 'comment' && nextScreen === 'list'
+                      ? 'comment-to-list'
+                      : currentScreen === 'list' && nextScreen === 'edit'
+                        ? 'list-to-edit'
+                        : currentScreen === 'comment' && nextScreen === 'edit'
+                          ? 'comment-to-edit'
+                          : currentScreen === 'edit' && nextScreen === 'comment'
+                            ? 'edit-to-comment'
+                            : currentScreen === 'edit' && nextScreen === 'list'
+                              ? 'edit-to-list'
+                              : 'none';
   }
 
   function applyNavigation(nextScreen, { pushHistory = true, animate = true } = {}) {
@@ -5002,6 +5323,33 @@ export default function App() {
     setSelectedWeek(week);
     setShouldOpenUploadDatePicker(nextScreen === 'upload' && source === 'add-polaroid');
     navigate(nextScreen);
+  }
+
+  function markNotificationsRead() {
+    const readAt = new Date().toISOString();
+    writeNotificationReadAt(selectedMemberId, readAt);
+    setNotificationReadAt(readAt);
+  }
+
+  function openNotificationsPage() {
+    markNotificationsRead();
+    navigate('notifications');
+  }
+
+  function openNotification(notification) {
+    if (notification.monthKey) {
+      setHomeMonth(getMonthStartForDate(`${notification.monthKey}-01`));
+      applyNavigation('home');
+      return;
+    }
+
+    const entry = entries.find((item) => item.id === notification.entryId);
+    if (!entry) return;
+
+    setSelectedWeek(getWeekForEntry(entry, entries));
+    setSelectedEntryId(entry.id);
+    setDeepLinkedCommentId(notification.commentId || '');
+    applyNavigation(notification.commentId ? 'comment' : 'list', { animate: !notification.commentId });
   }
 
   function openComments(entry) {
@@ -5227,25 +5575,31 @@ export default function App() {
     setSelectedEntryId(null);
   }
 
-  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'letter-to-home';
+  const showHome = screen === 'home' || screenTransition === 'home-to-list' || screenTransition === 'home-to-notifications' || screenTransition === 'notifications-to-home' || screenTransition === 'letter-to-home';
+  const showNotifications = screen === 'notifications' || screenTransition === 'home-to-notifications' || screenTransition === 'notifications-to-home' || screenTransition === 'notifications-to-comment' || screenTransition === 'comment-to-notifications';
   const keepListMountedBehindComment = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list';
   const showList = screen === 'list' || keepListMountedBehindComment || screenTransition === 'list-to-home' || screenTransition === 'list-to-edit' || screenTransition === 'edit-to-list';
-  const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
+  const showComments = screen === 'comment' || screenTransition === 'list-to-comment' || screenTransition === 'comment-to-list' || screenTransition === 'notifications-to-comment' || screenTransition === 'comment-to-notifications' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-comment';
   const showEdit = screen === 'edit' || screenTransition === 'list-to-edit' || screenTransition === 'comment-to-edit' || screenTransition === 'edit-to-list' || screenTransition === 'edit-to-comment';
   const showLetter = screen === 'letter' || screenTransition === 'letter-to-home';
+  const isScreenDimActive = dimmedScreenTransitions.has(screenTransition);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
 
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     document.body.classList.toggle('splash-active', showSplash);
-    themeColorMeta?.setAttribute('content', showSplash ? '#ffffff' : '#FAF9F7');
+    document.body.classList.toggle('app-dim-active', !showSplash && (isNicknamePickerOpen || isScreenDimActive));
+    const isPhotoDimActive = document.body.classList.contains('large-photo-dim-active');
+    const isAnyDimActive = isNicknamePickerOpen || isScreenDimActive || isPhotoDimActive;
+    themeColorMeta?.setAttribute('content', showSplash ? appSplashThemeColor : isAnyDimActive ? appDimThemeColor : appThemeColor);
 
     return () => {
       document.body.classList.remove('splash-active');
-      themeColorMeta?.setAttribute('content', '#FAF9F7');
+      document.body.classList.remove('app-dim-active');
+      themeColorMeta?.setAttribute('content', appThemeColor);
     };
-  }, [showSplash]);
+  }, [showSplash, isNicknamePickerOpen, isScreenDimActive]);
 
   return (
     <div className="screen-stage">
@@ -5283,11 +5637,24 @@ export default function App() {
           returningFromUpload={previousScreen === 'upload'}
           currentNickname={selectedMemberNickname}
           activeMemberId={selectedMemberId}
+          hasUnreadNotifications={hasUnreadNotifications}
           onChangeMonth={changeMonth}
           onChangeStickers={setStickersAndCache}
           onSaveMonthStickers={persistMonthStickers}
           onSelectWeek={openWeek}
           onOpenNicknamePicker={() => setIsNicknamePickerOpen(true)}
+          onOpenNotifications={openNotificationsPage}
+        />
+      ) : null}
+      {showNotifications ? (
+        <NotificationInboxScreen
+          key="notifications"
+          active={screen === 'notifications'}
+          notifications={notifications}
+          transitionKind={screenTransition}
+          screenPushDistance={screenPushDistance}
+          onNavigate={navigate}
+          onSelectNotification={openNotification}
         />
       ) : null}
       {showLetter ? (

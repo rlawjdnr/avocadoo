@@ -25,7 +25,7 @@ body::before {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 1100;
+  z-index: 1300;
   height: env(safe-area-inset-top, 0px);
   background: rgba(0, 0, 0, 0.48);
   opacity: 0;
@@ -33,6 +33,7 @@ body::before {
   transition: opacity 0.12s cubic-bezier(0, 0, 0.2, 1);
 }
 
+body.app-dim-active::before,
 body.large-photo-dim-active::before {
   opacity: 1;
 }
@@ -359,6 +360,13 @@ body.splash-active .screen-stage {
   height: 20px;
 }
 
+.home-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: -20px;
+}
+
 .couple-state {
   position: relative;
   width: 60px;
@@ -402,6 +410,127 @@ body.splash-active .screen-stage {
 .couple-state span img {
   width: 10px;
   height: 10px;
+}
+
+.notification-button {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+}
+
+.notification-button img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.notification-screen {
+  background: #fcfcf9;
+}
+
+.notification-page-list {
+  position: absolute;
+  left: 0;
+  top: 60px;
+  width: 100%;
+  height: calc(100% - 60px);
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 8px;
+  border-bottom: 0.5px solid rgba(42, 48, 56, 0.1);
+  background: transparent;
+  color: #2a3038;
+  text-align: left;
+}
+
+.notification-item-avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.notification-item-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notification-item-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.notification-item-copy span,
+.notification-item-copy em {
+  color: #555d6d;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.notification-item-copy em {
+  color: #8a93a3;
+}
+
+.notification-item time {
+  flex: 0 0 auto;
+  max-width: 62px;
+  color: #8a93a3;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.notification-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  padding: 32px 24px;
+  color: #555d6d;
+  text-align: center;
+}
+
+.notification-empty img {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+}
+
+.notification-empty strong {
+  color: #2a3038;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.notification-empty span {
+  max-width: 230px;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .nickname-picker-layer {
