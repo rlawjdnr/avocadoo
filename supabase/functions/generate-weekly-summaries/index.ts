@@ -89,7 +89,7 @@ Deno.serve(async (request) => {
   }
 
   const openAiApiKey = Deno.env.get('OPENAI_API_KEY');
-  const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5.1';
+  const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5.4-mini';
 
   if (!openAiApiKey) {
     return jsonResponse({ error: 'Missing OPENAI_API_KEY' }, 500);

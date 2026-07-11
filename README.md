@@ -72,7 +72,7 @@ Supabase Edge Function secret에 아래 값을 넣습니다.
 
 ```bash
 OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.1
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 그 다음 `supabase/functions/generate-weekly-summaries`를 배포합니다. `OPENAI_MODEL`은 생략할 수 있습니다.
