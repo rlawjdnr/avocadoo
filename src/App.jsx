@@ -573,6 +573,11 @@ function toDateInputValue(date) {
   return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
 }
 
+function dateInputToLocalDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function getMonthKey(date) {
   return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}`;
 }
@@ -835,11 +840,15 @@ function buildWeeklySummaryRequest(monthDate, entries) {
       return {
         id: week.id,
         range: week.range,
+        endDate: week.endDate,
         signature: getWeekSummarySignature(weekEntries),
         entries: weekEntries.map(toWeeklySummaryPayload),
       };
     })
-    .filter((week) => week.entries.length > 0);
+    .filter((week) => {
+      const weekEndDate = dateInputToLocalDate(week.endDate);
+      return week.entries.length > 0 && weekEndDate && weekEndDate < todayStart;
+    });
 }
 
 async function fetchWeeklySummaries(monthDate, entries) {
@@ -853,7 +862,7 @@ async function fetchWeeklySummaries(monthDate, entries) {
     body: {
       spaceId: coupleSpaceId,
       monthKey,
-      weeks: weeks.map(({ id, range, entries: weekEntries }) => ({ id, range, entries: weekEntries })),
+      weeks: weeks.map(({ id, range, endDate, signature, entries: weekEntries }) => ({ id, range, endDate, signature, entries: weekEntries })),
     },
   });
 
@@ -2376,7 +2385,7 @@ function Home({
         const requestWeek = requestWeeksById.get(week.id);
         const storedSummary = storedSummaries[week.id];
 
-        if (requestWeek && storedSummary?.signature === requestWeek.signature && storedSummary.label) {
+        if (requestWeek && storedSummary?.label) {
           summariesByWeek[week.id] = { label: storedSummary.label, status: 'ready' };
         } else if (requestWeek && loadingSummaryMonthKeys.has(month.key)) {
           summariesByWeek[week.id] = { status: 'loading' };
@@ -2420,7 +2429,7 @@ function Home({
         ...(cache[month.key] || {}),
         ...(weeklySummariesByMonth[month.key] || {}),
       };
-      const hasMissingSummary = requestWeeks.some((week) => cachedMonth[week.id]?.signature !== week.signature || !cachedMonth[week.id]?.label);
+      const hasMissingSummary = requestWeeks.some((week) => !cachedMonth[week.id]?.label);
       if (hasMissingSummary) monthsToLoad.push(month);
     });
 

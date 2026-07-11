@@ -1,3 +1,5 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -22,8 +24,16 @@ type WeeklySummaryRequest = {
   weeks?: {
     id?: string;
     range?: string;
+    endDate?: string;
+    signature?: string;
     entries?: WeeklyEntry[];
   }[];
+};
+
+type WeeklySummaryRow = {
+  week_id: string;
+  summary_text: string;
+  entry_signature?: string | null;
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -48,6 +58,8 @@ function normalizeWeeks(weeks: WeeklySummaryRequest['weeks']) {
     .map((week) => ({
       id: trimText(week?.id, 80),
       range: trimText(week?.range, 40),
+      endDate: trimText(week?.endDate, 10),
+      signature: trimText(week?.signature, 4000),
       entries: Array.isArray(week?.entries)
         ? week.entries.slice(0, 10).map((entry) => ({
           date: trimText(entry.date, 12),
@@ -62,6 +74,19 @@ function normalizeWeeks(weeks: WeeklySummaryRequest['weeks']) {
         : [],
     }))
     .filter((week) => week.id && week.entries.length > 0);
+}
+
+function getSeoulDateInputValue() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function isCompletedWeek(endDate: string, todayDate = getSeoulDateInputValue()) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(endDate) && endDate < todayDate;
 }
 
 function extractJsonObject(text: string) {
@@ -90,9 +115,15 @@ Deno.serve(async (request) => {
 
   const openAiApiKey = Deno.env.get('OPENAI_API_KEY');
   const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5.4-mini';
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!openAiApiKey) {
     return jsonResponse({ error: 'Missing OPENAI_API_KEY' }, 500);
+  }
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ error: 'Missing Supabase environment variables' }, 500);
   }
 
   let body: WeeklySummaryRequest;
@@ -103,10 +134,44 @@ Deno.serve(async (request) => {
   }
 
   const monthKey = trimText(body.monthKey, 7);
+  const spaceId = trimText(body.spaceId, 80);
   const weeks = normalizeWeeks(body.weeks);
 
-  if (!/^\d{4}-\d{2}$/.test(monthKey) || weeks.length === 0) {
-    return jsonResponse({ error: 'monthKey and weeks are required' }, 400);
+  if (!/^\d{4}-\d{2}$/.test(monthKey) || !spaceId || weeks.length === 0) {
+    return jsonResponse({ error: 'spaceId, monthKey, and weeks are required' }, 400);
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+
+  const weekIds = weeks.map((week) => week.id);
+  const { data: storedRows, error: storedError } = await supabase
+    .from('weekly_summaries')
+    .select('week_id, summary_text, entry_signature')
+    .eq('space_id', spaceId)
+    .eq('month_key', monthKey)
+    .in('week_id', weekIds);
+
+  if (storedError) {
+    return jsonResponse({ error: storedError.message }, 500);
+  }
+
+  const summaries: Record<string, string> = {};
+  const storedByWeek = new Map(
+    ((storedRows || []) as WeeklySummaryRow[])
+      .filter((row) => row.week_id && row.summary_text)
+      .map((row) => [row.week_id, row.summary_text])
+  );
+
+  for (const [weekId, summary] of storedByWeek) {
+    summaries[weekId] = summary;
+  }
+
+  const weeksToGenerate = weeks.filter((week) => !storedByWeek.has(week.id) && isCompletedWeek(week.endDate));
+
+  if (weeksToGenerate.length === 0) {
+    return jsonResponse({ summaries, generated: 0 });
   }
 
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -145,7 +210,7 @@ Deno.serve(async (request) => {
           content: [
             {
               type: 'input_text',
-              text: JSON.stringify({ monthKey, weeks }),
+              text: JSON.stringify({ monthKey, weeks: weeksToGenerate }),
             },
           ],
         },
@@ -183,12 +248,34 @@ Deno.serve(async (request) => {
   const outputText = data.output_text || data.output?.flatMap((item: { content?: { text?: string }[] }) => item.content || []).map((content: { text?: string }) => content.text || '').join('\n') || '';
   const parsed = extractJsonObject(outputText);
   const rawSummaries = parsed?.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {};
-  const summaries: Record<string, string> = {};
+  const generatedRows = [];
 
-  for (const week of weeks) {
+  for (const week of weeksToGenerate) {
     const label = trimText(rawSummaries[week.id], 24);
-    if (label) summaries[week.id] = label;
+    if (!label) continue;
+
+    summaries[week.id] = label;
+    generatedRows.push({
+      space_id: spaceId,
+      month_key: monthKey,
+      week_id: week.id,
+      week_range: week.range,
+      summary_text: label,
+      entry_signature: week.signature || null,
+      model,
+      generated_at: new Date().toISOString(),
+    });
   }
 
-  return jsonResponse({ summaries });
+  if (generatedRows.length > 0) {
+    const { error: upsertError } = await supabase
+      .from('weekly_summaries')
+      .upsert(generatedRows, { onConflict: 'space_id,week_id' });
+
+    if (upsertError) {
+      return jsonResponse({ error: upsertError.message }, 500);
+    }
+  }
+
+  return jsonResponse({ summaries, generated: generatedRows.length });
 });

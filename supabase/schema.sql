@@ -80,6 +80,23 @@ create table if not exists public.home_stickers (
   unique (space_id, month_key)
 );
 
+create table if not exists public.weekly_summaries (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid not null references public.couple_spaces(id) on delete cascade,
+  month_key text not null check (month_key ~ '^\d{4}-\d{2}$'),
+  week_id text not null,
+  week_range text not null,
+  summary_text text not null,
+  entry_signature text,
+  model text,
+  generated_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (space_id, week_id)
+);
+
+create index if not exists weekly_summaries_space_month_idx
+  on public.weekly_summaries (space_id, month_key);
+
 create or replace function public.enforce_couple_member_limit()
 returns trigger
 language plpgsql
@@ -122,6 +139,7 @@ alter table public.diary_entry_likes enable row level security;
 alter table public.diary_comment_likes enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.home_stickers enable row level security;
+alter table public.weekly_summaries enable row level security;
 
 drop policy if exists "public read couple spaces" on public.couple_spaces;
 create policy "public read couple spaces"
@@ -261,6 +279,11 @@ create policy "public update home stickers"
 drop policy if exists "public delete home stickers" on public.home_stickers;
 create policy "public delete home stickers"
   on public.home_stickers for delete
+  using (true);
+
+drop policy if exists "public read weekly summaries" on public.weekly_summaries;
+create policy "public read weekly summaries"
+  on public.weekly_summaries for select
   using (true);
 
 do $$
