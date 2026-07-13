@@ -744,8 +744,8 @@ body.splash-active .screen-stage {
   position: absolute;
   right: 16px;
   top: 16px;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border-radius: 999px;
   background: transparent;
@@ -753,8 +753,9 @@ body.splash-active .screen-stage {
 
 .sticker-picker-close img {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
 }
 
 .sticker-options {
@@ -1673,7 +1674,7 @@ body.splash-active .screen-stage {
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  padding: 20px 24px;
+  padding: 20px 16px 20px 20px;
 }
 
 .comment-row {
