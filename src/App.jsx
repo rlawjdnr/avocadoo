@@ -4138,11 +4138,16 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   function requestEditComment(comment) {
     setEditTargetComment(comment);
     setReply(comment.text || '');
-    window.requestAnimationFrame(() => {
-      if (!replyEditorRef.current) return;
-      replyEditorRef.current.textContent = comment.text || '';
-      replyEditorRef.current.focus();
-    });
+    if (!replyEditorRef.current) return;
+
+    replyEditorRef.current.textContent = comment.text || '';
+    replyEditorRef.current.focus();
+    const range = document.createRange();
+    range.selectNodeContents(replyEditorRef.current);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }
 
   async function submitReply(event) {

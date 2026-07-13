@@ -1804,7 +1804,7 @@ body.splash-active .screen-stage {
   flex-direction: column;
   width: 148px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: 20px;
   background: #ffffff;
   box-shadow: 0 8px 22px rgba(17, 24, 39, 0.18);
 }
