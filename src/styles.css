@@ -1679,7 +1679,7 @@ body.splash-active .screen-stage {
 .comment-row {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   width: 100%;
   border-radius: 8px;
@@ -1797,12 +1797,12 @@ body.splash-active .screen-stage {
 
 .comment-action-popover {
   position: absolute;
-  top: 30px;
+  top: 32px;
   right: 0;
   z-index: 150;
   display: flex;
   flex-direction: column;
-  width: 128px;
+  width: 148px;
   overflow: hidden;
   border-radius: 12px;
   background: #ffffff;
@@ -1811,7 +1811,7 @@ body.splash-active .screen-stage {
 
 .comment-action-popover button {
   width: 100%;
-  height: 40px;
+  height: 48px;
   padding: 0 16px;
   background: #ffffff;
   color: #2a3038;
