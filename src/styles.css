@@ -1710,6 +1710,9 @@ body.splash-active .screen-stage {
   align-items: flex-start;
   gap: 12px;
   min-width: 0;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .comment-copy > img {
@@ -1763,6 +1766,14 @@ body.splash-active .screen-stage {
 .comment-row > .reaction-button img {
   width: 16.8px;
   height: 16.8px;
+}
+
+.comment-delete-modal-layer {
+  z-index: 145;
+}
+
+.comment-delete-confirm {
+  background: #ef4444;
 }
 
 .reply-composer {

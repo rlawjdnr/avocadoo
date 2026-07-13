@@ -149,6 +149,7 @@ const weeklySummaryFunctionName = 'generate-weekly-summaries';
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
 const listLoadMoreThresholdPx = 900;
+const commentLongPressMs = 520;
 const uploadGridColumnCount = 3;
 const storageCacheControlSeconds = '31536000';
 const uploadPhotoMaxDimension = 960;
@@ -2075,6 +2076,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
   const weekListRef = useRef(null);
   const {
     monthKey = '',
+    savedScrollTop = 0,
     stickers = [],
     editStickers = [],
     selectedStickerId = '',
@@ -2089,6 +2091,9 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
 
   useLayoutEffect(() => {
     if (!isRenderable || !weekListRef.current) return;
+    if (Number.isFinite(savedScrollTop) && weekListRef.current.scrollTop !== savedScrollTop) {
+      weekListRef.current.scrollTo({ top: Math.max(0, savedScrollTop), behavior: 'auto' });
+    }
     onScrollChange?.(monthKey, weekListRef.current.scrollTop || 0);
   }, [isRenderable, monthKey]);
 
@@ -2329,8 +2334,10 @@ function Home({
   monthDate,
   entries,
   availableDiaryMonthKeys = [],
+  monthScrollTops = {},
   stickersByMonth,
   onChangeMonth,
+  onMonthScrollChange,
   onChangeStickers,
   onSaveMonthStickers,
   onSelectWeek,
@@ -2360,7 +2367,6 @@ function Home({
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
   const [stickerBounce, setStickerBounce] = useState({ key: 0, ids: [] });
-  const [monthScrollTops, setMonthScrollTops] = useState({});
   const [weeklySummariesByMonth, setWeeklySummariesByMonth] = useState(readWeeklySummaryCache);
   const [loadingSummaryMonthKeys, setLoadingSummaryMonthKeys] = useState(() => new Set());
   const [failedSummaryMonthKeys, setFailedSummaryMonthKeys] = useState(() => new Set());
@@ -2934,13 +2940,7 @@ function Home({
 
   function handleMonthScrollChange(monthKey, scrollTop) {
     if (!monthKey) return;
-    setMonthScrollTops((current) => {
-      if (current[monthKey] === scrollTop) return current;
-      return {
-        ...current,
-        [monthKey]: scrollTop,
-      };
-    });
+    onMonthScrollChange?.(monthKey, scrollTop);
   }
 
   function getActiveWeekListMetrics() {
@@ -3115,6 +3115,7 @@ function Home({
             <HomeMonthPage
               key={month.key}
               monthKey={month.key}
+              savedScrollTop={monthScrollTops[month.key] || 0}
               weeks={monthWeeksByKey.get(month.key) || []}
               isRenderable={renderableMonthIndexes.has(index)}
               stickers={stickersByMonth[month.key] || []}
@@ -3970,12 +3971,64 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   );
 }
 
-function CommentRow({ comment, onToggleCommentLike, isTarget = false, rowRef }) {
+function CommentRow({ comment, onToggleCommentLike, onRequestDelete, isTarget = false, rowRef }) {
   const createdAtText = formatCommentCreatedAt(comment.createdAt || comment.created_at);
+  const longPressRef = useRef(null);
+
+  useEffect(() => () => {
+    if (longPressRef.current?.timerId) window.clearTimeout(longPressRef.current.timerId);
+  }, []);
+
+  function clearLongPress() {
+    if (longPressRef.current?.timerId) {
+      window.clearTimeout(longPressRef.current.timerId);
+    }
+    longPressRef.current = null;
+  }
+
+  function startLongPress(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    clearLongPress();
+    longPressRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      triggered: false,
+      timerId: window.setTimeout(() => {
+        if (!longPressRef.current) return;
+        longPressRef.current.triggered = true;
+        onRequestDelete(comment);
+      }, commentLongPressMs),
+    };
+  }
+
+  function moveLongPress(event) {
+    const gesture = longPressRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 10) {
+      clearLongPress();
+    }
+  }
+
+  function finishLongPress(event) {
+    const wasTriggered = Boolean(longPressRef.current?.triggered);
+    clearLongPress();
+    if (!wasTriggered) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
 
   return (
     <div ref={rowRef} className={isTarget ? 'comment-row comment-row-target' : 'comment-row'}>
-      <div className="comment-copy">
+      <div
+        className="comment-copy"
+        onPointerDown={startLongPress}
+        onPointerMove={moveLongPress}
+        onPointerUp={finishLongPress}
+        onPointerCancel={clearLongPress}
+        onPointerLeave={clearLongPress}
+      >
         <img src={getMemberAvatarSrc(comment.nickname)} alt="" />
         <div>
           <span className="comment-meta">
@@ -3997,8 +4050,9 @@ function CommentRow({ comment, onToggleCommentLike, isTarget = false, rowRef }) 
   );
 }
 
-function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
+function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
+  const [deleteTargetComment, setDeleteTargetComment] = useState(null);
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
@@ -4066,6 +4120,13 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     }
   }
 
+  async function confirmDeleteComment() {
+    if (!deleteTargetComment) return;
+    const targetCommentId = deleteTargetComment.id;
+    setDeleteTargetComment(null);
+    await onDeleteComment(entry.id, targetCommentId);
+  }
+
   async function submitReply(event) {
     event.preventDefault();
     await sendReply();
@@ -4119,6 +4180,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
               isTarget={comment.id === targetCommentId}
               rowRef={comment.id === targetCommentId ? targetCommentRef : null}
               onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)}
+              onRequestDelete={setDeleteTargetComment}
             />
           ))}
         </div>
@@ -4153,6 +4215,26 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
           </button>
         </div>
       </form>
+      <AnimatePresence>
+        {deleteTargetComment ? (
+          <div className="edit-modal-layer comment-delete-modal-layer" role="presentation">
+            <motion.section className="edit-leave-modal comment-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-comment-title" {...editModalMotion}>
+              <div className="edit-modal-copy">
+                <strong id="delete-comment-title">댓글을 삭제할까요?</strong>
+                <p>삭제한 댓글은 다시 되돌릴 수 없어요.</p>
+              </div>
+              <div className="edit-modal-actions">
+                <button className="edit-modal-button edit-modal-cancel" type="button" onClick={() => setDeleteTargetComment(null)}>
+                  취소
+                </button>
+                <button className="edit-modal-button edit-modal-leave comment-delete-confirm" type="button" onClick={confirmDeleteComment}>
+                  삭제
+                </button>
+              </div>
+            </motion.section>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </motion.section>
   );
 }
@@ -4917,6 +4999,19 @@ function addLocalCommentToEntries(entries, entryId, comment) {
   );
 }
 
+function removeLocalCommentFromEntries(entries, entryId, commentId) {
+  return entries.map((entry) => {
+    if (entry.id !== entryId) return entry;
+
+    const nextComments = (entry.comments || []).filter((comment) => comment.id !== commentId);
+    return {
+      ...entry,
+      commentCount: nextComments.length,
+      comments: nextComments,
+    };
+  });
+}
+
 function updateLocalEntry(entries, entryId, changes) {
   return sortEntriesByDate(
     entries.map((entry) =>
@@ -4958,6 +5053,7 @@ export default function App() {
   const [previousScreen, setPreviousScreen] = useState(null);
   const [screenTransition, setScreenTransition] = useState('none');
   const [homeMonth, setHomeMonth] = useState(getInitialHomeMonth);
+  const [homeMonthScrollTops, setHomeMonthScrollTops] = useState({});
   const [selectedWeek, setSelectedWeek] = useState(initialWeeks[0]);
   const [entries, setEntries] = useState([]);
   const [availableDiaryMonthKeys, setAvailableDiaryMonthKeys] = useState([]);
@@ -5016,6 +5112,17 @@ export default function App() {
       const nextStickers = typeof nextStickersOrUpdater === 'function' ? nextStickersOrUpdater(current) : nextStickersOrUpdater;
       writeLocalStickers(nextStickers);
       return nextStickers;
+    });
+  }
+
+  function saveHomeMonthScrollTop(monthKey, scrollTop) {
+    if (!monthKey) return;
+    setHomeMonthScrollTops((current) => {
+      if (current[monthKey] === scrollTop) return current;
+      return {
+        ...current,
+        [monthKey]: scrollTop,
+      };
     });
   }
 
@@ -5688,6 +5795,29 @@ export default function App() {
     void notifyWebPush('comment_created', { entryId, commentId }, selectedMemberId);
   }
 
+  async function deleteComment(entryId, commentId) {
+    const entry = entries.find((item) => item.id === entryId);
+    const comment = entry?.comments.find((item) => item.id === commentId);
+    if (!comment) return;
+
+    setEntriesAndCache((current) => removeLocalCommentFromEntries(current, entryId, commentId));
+    if (deepLinkedCommentId === commentId) setDeepLinkedCommentId('');
+
+    if (!hasSupabaseConfig) return;
+    if (!isSupabaseUuid(commentId)) return;
+
+    try {
+      const { error: likesError } = await supabase.from('diary_comment_likes').delete().eq('comment_id', commentId);
+      if (likesError) throw likesError;
+
+      const { error } = await supabase.from('diary_comments').delete().eq('id', commentId);
+      if (error) throw error;
+    } catch (error) {
+      setLoadError(error.message || '댓글을 삭제하지 못했어요.');
+      setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
+    }
+  }
+
   async function updateEntry(entryId, changes) {
     const entry = entries.find((item) => item.id === entryId);
     if (!entry) return;
@@ -5834,6 +5964,7 @@ export default function App() {
           monthDate={homeMonth}
           entries={entries}
           availableDiaryMonthKeys={availableDiaryMonthKeys}
+          monthScrollTops={homeMonthScrollTops}
           stickersByMonth={stickersByMonth}
           transitionKind={screenTransition}
           screenPushDistance={screenPushDistance}
@@ -5842,6 +5973,7 @@ export default function App() {
           activeMemberId={selectedMemberId}
           hasUnreadNotifications={hasUnreadNotifications}
           onChangeMonth={changeMonth}
+          onMonthScrollChange={saveHomeMonthScrollTop}
           onChangeStickers={setStickersAndCache}
           onSaveMonthStickers={persistMonthStickers}
           onSelectWeek={openWeek}
@@ -5899,6 +6031,7 @@ export default function App() {
           onToggleLike={toggleEntryLike}
           onToggleCommentLike={toggleCommentLike}
           onAddComment={addComment}
+          onDeleteComment={deleteComment}
           onEditEntry={openEditEntry}
           currentNickname={selectedMemberNickname}
         />
