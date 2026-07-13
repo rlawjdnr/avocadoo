@@ -1677,6 +1677,7 @@ body.splash-active .screen-stage {
 }
 
 .comment-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1710,9 +1711,6 @@ body.splash-active .screen-stage {
   align-items: flex-start;
   gap: 12px;
   min-width: 0;
-  touch-action: manipulation;
-  -webkit-touch-callout: none;
-  user-select: none;
 }
 
 .comment-copy > img {
@@ -1755,17 +1753,77 @@ body.splash-active .screen-stage {
   line-height: 22px;
 }
 
-.comment-row > .reaction-button {
-  flex: 0 0 auto;
+.comment-copy .reaction-button {
   width: 28px;
   min-width: 28px;
   height: 28px;
+  margin-top: 2px;
+  margin-left: -5.6px;
   padding: 5.6px;
 }
 
-.comment-row > .reaction-button img {
+.comment-copy .reaction-button img {
   width: 16.8px;
   height: 16.8px;
+}
+
+.comment-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+}
+
+.comment-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.comment-menu-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(42, 48, 56, 0.58);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.comment-menu-button span {
+  transform: translateY(-1px);
+}
+
+.comment-action-popover {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  width: 128px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.18);
+}
+
+.comment-action-popover button {
+  width: 100%;
+  height: 40px;
+  padding: 0 16px;
+  background: #ffffff;
+  color: #2a3038;
+  font-family: Pretendard, Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: left;
+}
+
+.comment-action-popover button + button {
+  border-top: 0.5px solid rgba(42, 48, 56, 0.1);
 }
 
 .comment-delete-modal-layer {

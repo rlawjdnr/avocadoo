@@ -149,7 +149,6 @@ const weeklySummaryFunctionName = 'generate-weekly-summaries';
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
 const listLoadMoreThresholdPx = 900;
-const commentLongPressMs = 520;
 const uploadGridColumnCount = 3;
 const storageCacheControlSeconds = '31536000';
 const uploadPhotoMaxDimension = 960;
@@ -3971,64 +3970,26 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   );
 }
 
-function CommentRow({ comment, onToggleCommentLike, onRequestDelete, isTarget = false, rowRef }) {
+function CommentRow({ comment, onToggleCommentLike, onRequestEdit, onRequestDelete, isTarget = false, rowRef }) {
   const createdAtText = formatCommentCreatedAt(comment.createdAt || comment.created_at);
-  const longPressRef = useRef(null);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef(null);
 
-  useEffect(() => () => {
-    if (longPressRef.current?.timerId) window.clearTimeout(longPressRef.current.timerId);
-  }, []);
+  useEffect(() => {
+    if (!isActionMenuOpen) return undefined;
 
-  function clearLongPress() {
-    if (longPressRef.current?.timerId) {
-      window.clearTimeout(longPressRef.current.timerId);
+    function closeMenuOnOutsidePointer(event) {
+      if (actionMenuRef.current?.contains(event.target)) return;
+      setIsActionMenuOpen(false);
     }
-    longPressRef.current = null;
-  }
 
-  function startLongPress(event) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-
-    clearLongPress();
-    longPressRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      triggered: false,
-      timerId: window.setTimeout(() => {
-        if (!longPressRef.current) return;
-        longPressRef.current.triggered = true;
-        onRequestDelete(comment);
-      }, commentLongPressMs),
-    };
-  }
-
-  function moveLongPress(event) {
-    const gesture = longPressRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 10) {
-      clearLongPress();
-    }
-  }
-
-  function finishLongPress(event) {
-    const wasTriggered = Boolean(longPressRef.current?.triggered);
-    clearLongPress();
-    if (!wasTriggered) return;
-    event.preventDefault();
-    event.stopPropagation();
-  }
+    document.addEventListener('pointerdown', closeMenuOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeMenuOnOutsidePointer);
+  }, [isActionMenuOpen]);
 
   return (
     <div ref={rowRef} className={isTarget ? 'comment-row comment-row-target' : 'comment-row'}>
-      <div
-        className="comment-copy"
-        onPointerDown={startLongPress}
-        onPointerMove={moveLongPress}
-        onPointerUp={finishLongPress}
-        onPointerCancel={clearLongPress}
-        onPointerLeave={clearLongPress}
-      >
+      <div className="comment-copy">
         <img src={getMemberAvatarSrc(comment.nickname)} alt="" />
         <div>
           <span className="comment-meta">
@@ -4036,22 +3997,64 @@ function CommentRow({ comment, onToggleCommentLike, onRequestDelete, isTarget = 
             {createdAtText ? <time dateTime={comment.createdAt || comment.created_at}>{createdAtText}</time> : null}
           </span>
           <p>{comment.text}</p>
+          <ReactionButton
+            icon={assets.likeOutline}
+            activeIcon={assets.likeFilled}
+            active={comment.liked}
+            label="댓글 좋아요"
+            compact
+            onClick={() => onToggleCommentLike(comment.id)}
+          />
         </div>
       </div>
-      <ReactionButton
-        icon={assets.likeOutline}
-        activeIcon={assets.likeFilled}
-        active={comment.liked}
-        label="댓글 좋아요"
-        compact
-        onClick={() => onToggleCommentLike(comment.id)}
-      />
+      <div className="comment-actions">
+        <div className="comment-menu-wrap" ref={actionMenuRef}>
+          <button className="comment-menu-button" type="button" aria-label="댓글 메뉴" onClick={() => setIsActionMenuOpen((current) => !current)}>
+            <span aria-hidden="true">⋮</span>
+          </button>
+          <AnimatePresence>
+            {isActionMenuOpen ? (
+              <motion.div
+                className="comment-action-popover"
+                style={{ transformOrigin: '100% 0%' }}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{
+                  scale: { type: 'spring', stiffness: 900, damping: 42 },
+                  opacity: { duration: 0.08, ease: [0, 0, 0.2, 1] },
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionMenuOpen(false);
+                    onRequestEdit(comment);
+                  }}
+                >
+                  수정
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionMenuOpen(false);
+                    onRequestDelete(comment);
+                  }}
+                >
+                  삭제
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }
 
-function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
+function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onUpdateComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
+  const [editTargetComment, setEditTargetComment] = useState(null);
   const [deleteTargetComment, setDeleteTargetComment] = useState(null);
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -4112,7 +4115,12 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     if (!trimmed) return;
     isReplySendingRef.current = true;
     try {
-      await onAddComment(entry.id, trimmed);
+      if (editTargetComment) {
+        await onUpdateComment(entry.id, editTargetComment.id, trimmed);
+        setEditTargetComment(null);
+      } else {
+        await onAddComment(entry.id, trimmed);
+      }
       setReply('');
       if (replyEditorRef.current) replyEditorRef.current.textContent = '';
     } finally {
@@ -4125,6 +4133,16 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     const targetCommentId = deleteTargetComment.id;
     setDeleteTargetComment(null);
     await onDeleteComment(entry.id, targetCommentId);
+  }
+
+  function requestEditComment(comment) {
+    setEditTargetComment(comment);
+    setReply(comment.text || '');
+    window.requestAnimationFrame(() => {
+      if (!replyEditorRef.current) return;
+      replyEditorRef.current.textContent = comment.text || '';
+      replyEditorRef.current.focus();
+    });
   }
 
   async function submitReply(event) {
@@ -4180,6 +4198,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
               isTarget={comment.id === targetCommentId}
               rowRef={comment.id === targetCommentId ? targetCommentRef : null}
               onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)}
+              onRequestEdit={requestEditComment}
               onRequestDelete={setDeleteTargetComment}
             />
           ))}
@@ -5012,6 +5031,17 @@ function removeLocalCommentFromEntries(entries, entryId, commentId) {
   });
 }
 
+function updateLocalCommentInEntries(entries, entryId, commentId, text) {
+  return entries.map((entry) => {
+    if (entry.id !== entryId) return entry;
+
+    return {
+      ...entry,
+      comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, text, body_text: text } : comment)),
+    };
+  });
+}
+
 function updateLocalEntry(entries, entryId, changes) {
   return sortEntriesByDate(
     entries.map((entry) =>
@@ -5818,6 +5848,23 @@ export default function App() {
     }
   }
 
+  async function updateComment(entryId, commentId, text) {
+    const entry = entries.find((item) => item.id === entryId);
+    const comment = entry?.comments.find((item) => item.id === commentId);
+    if (!comment) return;
+
+    setEntriesAndCache((current) => updateLocalCommentInEntries(current, entryId, commentId, text));
+
+    if (!hasSupabaseConfig) return;
+    if (!isSupabaseUuid(commentId)) return;
+
+    const { error } = await supabase.from('diary_comments').update({ body_text: text }).eq('id', commentId);
+    if (error) {
+      setLoadError(error.message || '댓글을 수정하지 못했어요.');
+      setEntriesAndCache((current) => updateLocalCommentInEntries(current, entryId, commentId, comment.text || ''));
+    }
+  }
+
   async function updateEntry(entryId, changes) {
     const entry = entries.find((item) => item.id === entryId);
     if (!entry) return;
@@ -6031,6 +6078,7 @@ export default function App() {
           onToggleLike={toggleEntryLike}
           onToggleCommentLike={toggleCommentLike}
           onAddComment={addComment}
+          onUpdateComment={updateComment}
           onDeleteComment={deleteComment}
           onEditEntry={openEditEntry}
           currentNickname={selectedMemberNickname}
