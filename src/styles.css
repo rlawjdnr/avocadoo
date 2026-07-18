@@ -925,6 +925,7 @@ body.splash-active .screen-stage {
   background: #ffffff;
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
   transition:
+    transform 0.12s cubic-bezier(0, 0, 0.2, 1),
     filter 0.12s cubic-bezier(0, 0, 0.2, 1),
     box-shadow 0.12s cubic-bezier(0, 0, 0.2, 1);
 }
@@ -941,6 +942,7 @@ body.splash-active .screen-stage {
 
 .polaroid:has(.polaroid-cover-control:active) .polaroid-paper,
 .upload-add-control:active .polaroid-paper {
+  transform: scale(0.96);
   filter: brightness(0.96);
   box-shadow: -1px 1px 3px 1px rgba(0, 0, 0, 0.14);
 }
@@ -964,6 +966,16 @@ body.splash-active .screen-stage {
 
 .polaroid-right .polaroid-paper {
   transform: rotate(4deg);
+}
+
+.polaroid-left:has(.polaroid-cover-control:active) .polaroid-paper,
+.upload-add-control:active .polaroid-left .polaroid-paper {
+  transform: rotate(-4deg) scale(0.96);
+}
+
+.polaroid-right:has(.polaroid-cover-control:active) .polaroid-paper,
+.upload-add-control:active .polaroid-right .polaroid-paper {
+  transform: rotate(4deg) scale(0.96);
 }
 
 .polaroid-image {
