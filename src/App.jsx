@@ -161,6 +161,8 @@ const screenTransitionResetMs = 650;
 const maxUploadPhotos = 6;
 const notificationRetentionDays = 30;
 const diaryEntryFetchPageSize = 60;
+const initialDataLoadTimeoutMs = 8000;
+const monthDataLoadTimeoutMs = 8000;
 const weeklySummaryFunctionName = 'generate-weekly-summaries';
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
@@ -5279,6 +5281,17 @@ function isDiaryImagesPolicyError(error) {
   return message.includes('row-level security') && message.includes('diary_images');
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    window.clearTimeout(timeoutId);
+  });
+}
+
 async function uploadDiaryPhotos(entryId, photos) {
   const normalizedPhotos = normalizePhotoCoverFlags(photos);
   if (!hasSupabaseConfig) {
@@ -5631,7 +5644,11 @@ export default function App() {
 
     pendingDiaryMonthKeys.current.add(monthKey);
     try {
-      const monthEntries = await fetchDiaryEntriesForMonth(monthDate, memberId);
+      const monthEntries = await withTimeout(
+        fetchDiaryEntriesForMonth(monthDate, memberId),
+        monthDataLoadTimeoutMs,
+        '월별 일기 요청이 지연되고 있어요.'
+      );
       loadedDiaryMonthKeys.current.add(monthKey);
       setEntriesAndCache((current) => mergeEntriesById(current, monthEntries));
       setLoadError('');
@@ -5647,7 +5664,11 @@ export default function App() {
     loadedDiaryMonthKeys.current = new Set();
     pendingDiaryMonthKeys.current = new Set();
 
-    Promise.all([fetchDiaryEntries(selectedMemberId), fetchAvailableDiaryMonthKeys(), fetchHomeStickers()])
+    withTimeout(
+      Promise.all([fetchDiaryEntries(selectedMemberId), fetchAvailableDiaryMonthKeys(), fetchHomeStickers()]),
+      initialDataLoadTimeoutMs,
+      '초기 데이터를 불러오는 중 서버 응답이 지연되고 있어요.'
+    )
       .then(([nextEntries, nextAvailableDiaryMonthKeys, nextStickers]) => {
         if (!isMounted) return;
         setEntriesAndCache(nextEntries);
@@ -5658,16 +5679,12 @@ export default function App() {
       })
       .catch((error) => {
         if (!isMounted) return;
-        if (hasSupabaseConfig) {
-          setEntries([]);
-          setAvailableDiaryMonthKeys([]);
-          setSelectedEntryId(null);
-        } else {
-          const localEntries = readLocalEntries();
-          setEntriesAndCache(localEntries);
-          setAvailableDiaryMonthKeys(Array.from(new Set(localEntries.map((entry) => getMonthKeyForDate(entry.date)))).sort());
-          setSelectedEntryId(localEntries[0]?.id || null);
-        }
+        const localEntries = readLocalEntries();
+        const localStickers = readLocalStickers();
+        setEntriesAndCache(localEntries);
+        setStickersAndCache(localStickers);
+        setAvailableDiaryMonthKeys(Array.from(new Set(localEntries.map((entry) => getMonthKeyForDate(entry.date)))).sort());
+        setSelectedEntryId(localEntries[0]?.id || null);
         setLoadError(error.message || '일기를 불러오지 못했어요.');
       })
       .finally(() => {
