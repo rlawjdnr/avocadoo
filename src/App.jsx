@@ -163,6 +163,7 @@ const notificationRetentionDays = 30;
 const diaryEntryFetchPageSize = 60;
 const initialDataLoadTimeoutMs = 8000;
 const monthDataLoadTimeoutMs = 8000;
+const splashEmergencyReleaseMs = 3500;
 const weeklySummaryFunctionName = 'generate-weekly-summaries';
 const listInitialRenderCount = 8;
 const listRenderBatchSize = 8;
@@ -5661,8 +5662,21 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let didFinishInitialLoad = false;
     loadedDiaryMonthKeys.current = new Set();
     pendingDiaryMonthKeys.current = new Set();
+
+    const emergencyReleaseTimer = window.setTimeout(() => {
+      if (!isMounted || didFinishInitialLoad) return;
+      const localEntries = readLocalEntries();
+      const localStickers = readLocalStickers();
+      setEntriesAndCache(localEntries);
+      setStickersAndCache(localStickers);
+      setAvailableDiaryMonthKeys(Array.from(new Set(localEntries.map((entry) => getMonthKeyForDate(entry.date)))).sort());
+      setSelectedEntryId(localEntries[0]?.id || null);
+      setLoadError('서버 응답이 지연되어 임시로 저장된 화면을 먼저 보여드릴게요.');
+      setIsInitialDataLoaded(true);
+    }, splashEmergencyReleaseMs);
 
     withTimeout(
       Promise.all([fetchDiaryEntries(selectedMemberId), fetchAvailableDiaryMonthKeys(), fetchHomeStickers()]),
@@ -5689,11 +5703,14 @@ export default function App() {
       })
       .finally(() => {
         if (!isMounted) return;
+        didFinishInitialLoad = true;
+        window.clearTimeout(emergencyReleaseTimer);
         setIsInitialDataLoaded(true);
       });
 
     return () => {
       isMounted = false;
+      window.clearTimeout(emergencyReleaseTimer);
     };
   }, [selectedMemberId]);
 
