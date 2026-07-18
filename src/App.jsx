@@ -741,6 +741,26 @@ function getPhotoStoragePath(photo) {
   return photo.storagePath || photo.storage_path || '';
 }
 
+function isCoverPhoto(photo) {
+  if (!photo || typeof photo === 'string') return false;
+  return Boolean(photo.isCover || photo.is_cover);
+}
+
+function normalizePhotoCoverFlags(photos, coverPhotoId = '') {
+  const limitedPhotos = (photos || []).slice(0, maxUploadPhotos);
+  const selectedCoverId = coverPhotoId || limitedPhotos.find(isCoverPhoto)?.id || '';
+  return limitedPhotos.map((photo) => ({
+    ...photo,
+    isCover: Boolean(selectedCoverId && photo.id === selectedCoverId),
+    is_cover: Boolean(selectedCoverId && photo.id === selectedCoverId),
+  }));
+}
+
+function getEntryCoverPhoto(entry) {
+  const photos = entry?.photos || [];
+  return photos.find(isCoverPhoto) || photos[0];
+}
+
 function getOptimizedPhotoSrc(photo, transform) {
   const originalSrc = getPhotoSrc(photo);
   const storagePath = getPhotoStoragePath(photo);
@@ -766,6 +786,8 @@ function toStorableEntry(entry) {
       storage_path: photo.storagePath || photo.storage_path || '',
       sortOrder: photo.sortOrder ?? photo.sort_order,
       sort_order: photo.sortOrder ?? photo.sort_order,
+      isCover: isCoverPhoto(photo),
+      is_cover: isCoverPhoto(photo),
     })),
     comments: entry.comments || [],
   };
@@ -1133,6 +1155,61 @@ function normalizeCommentEmojiReaction(value) {
   return { count, selectedBy: Array.from(new Set(selectedBy)) };
 }
 
+function addCommentEmojiReactionValue(reaction, nickname) {
+  const normalized = normalizeCommentEmojiReaction(reaction);
+  const normalizedNickname = normalizeSelectedNickname(nickname);
+  if (!normalizedNickname || normalized.selectedBy.includes(normalizedNickname)) return normalized;
+
+  return {
+    count: normalized.count + 1,
+    selectedBy: [...normalized.selectedBy, normalizedNickname],
+  };
+}
+
+function removeCommentEmojiReactionValue(reaction, nickname) {
+  const normalized = normalizeCommentEmojiReaction(reaction);
+  const normalizedNickname = normalizeSelectedNickname(nickname);
+  if (!normalizedNickname || !normalized.selectedBy.includes(normalizedNickname)) return normalized;
+
+  return {
+    count: Math.max(0, normalized.count - 1),
+    selectedBy: normalized.selectedBy.filter((selectedNickname) => selectedNickname !== normalizedNickname),
+  };
+}
+
+function setCommentEmojiReactionValue(reactionsByComment, commentId, emojiId, reaction) {
+  const normalized = normalizeCommentEmojiReaction(reaction);
+  const next = { ...reactionsByComment };
+  const nextCommentReactions = { ...(next[commentId] || {}) };
+
+  if (normalized.count > 0) {
+    nextCommentReactions[emojiId] = normalized;
+  } else {
+    delete nextCommentReactions[emojiId];
+  }
+
+  if (Object.keys(nextCommentReactions).length > 0) {
+    next[commentId] = nextCommentReactions;
+  } else {
+    delete next[commentId];
+  }
+
+  return next;
+}
+
+function mapCommentEmojiReactionRows(rows, membersById = new Map()) {
+  return (rows || []).reduce((reactionsByComment, row) => {
+    const commentId = row.comment_id;
+    const emojiId = row.emoji_id;
+    const nickname = membersById.get(row.member_id) || getNicknameForMemberId(row.member_id);
+    if (!commentId || !emojiId || !nickname) return reactionsByComment;
+
+    const currentReaction = reactionsByComment[commentId]?.[emojiId];
+    const nextReaction = addCommentEmojiReactionValue(currentReaction, nickname);
+    return setCommentEmojiReactionValue(reactionsByComment, commentId, emojiId, nextReaction);
+  }, {});
+}
+
 function createPhotoPreviewUrl(file) {
   return URL.createObjectURL(file);
 }
@@ -1485,6 +1562,43 @@ function buildNotifications(entries, currentNickname = currentMemberNickname, st
           timeValue: commentTime,
         });
       }
+
+      if (memberNicknames.includes(commentNickname) && !isPartnerActivity(commentNickname)) {
+        const likedByNicknames = Array.from(new Set((comment.likedByNicknames || []).map((nickname) => getNotificationNickname(nickname))));
+        likedByNicknames.forEach((nickname, index) => {
+          if (!isPartnerActivity(nickname)) return;
+          notifications.push({
+            id: `comment-liked-${comment.id}-${nickname}`,
+            type: 'comment_liked',
+            entryId: entry.id,
+            commentId: comment.id,
+            title: nickname,
+            message: '댓글에 좋아요를 남겼어요.',
+            preview: comment.text || '',
+            createdAt: commentCreatedAt,
+            timeValue: commentTime - 1 - index,
+          });
+        });
+
+        Object.entries(comment.emojiReactions || {}).forEach(([emojiId, reaction], reactionIndex) => {
+          const emojiReaction = normalizeCommentEmojiReaction(reaction);
+          emojiReaction.selectedBy.forEach((nickname, nicknameIndex) => {
+            const reactionNickname = getNotificationNickname(nickname);
+            if (!isPartnerActivity(reactionNickname)) return;
+            notifications.push({
+              id: `comment-emoji-reacted-${comment.id}-${emojiId}-${reactionNickname}`,
+              type: 'comment_emoji_reacted',
+              entryId: entry.id,
+              commentId: comment.id,
+              title: reactionNickname,
+              message: '댓글에 이모지 반응을 남겼어요.',
+              preview: comment.text || '',
+              createdAt: commentCreatedAt,
+              timeValue: commentTime - 10 - reactionIndex - nicknameIndex,
+            });
+          });
+        });
+      }
     });
   });
 
@@ -1537,6 +1651,11 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
       id: image.id,
       src: image.image_url,
       storagePath: image.storage_path,
+      storage_path: image.storage_path,
+      sortOrder: image.sort_order,
+      sort_order: image.sort_order,
+      isCover: Boolean(image.is_cover),
+      is_cover: Boolean(image.is_cover),
     }));
   const comments = (row.diary_comments || [])
     .slice()
@@ -1551,6 +1670,7 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
         created_at: comment.created_at,
         liked: commentLikes.some((like) => like.member_id === viewerMemberId),
         likeCount: commentLikes.length,
+        likedByNicknames: Array.from(new Set(commentLikes.map((like) => getNicknameForMemberId(like.member_id)))),
       };
     });
 
@@ -1561,7 +1681,7 @@ function mapDiaryEntry(row, viewerMemberId = currentMemberId) {
     dateLabel: formatDateLabel(row.diary_date),
     weekday: formatWeekday(row.diary_date),
     nickname: row.couple_members?.nickname || getNicknameForMemberId(row.author_id),
-    photos,
+    photos: normalizePhotoCoverFlags(photos),
     text: row.body_text,
     location: row.location_text || '',
     createdAt: row.created_at,
@@ -1582,7 +1702,7 @@ function applyEntriesToWeeks(weeks, entries, summariesByWeek = {}) {
   return weeks.map((week) => {
     const weekEntries = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id));
     const photos = sortEntriesByDate(entries.filter((entry) => entry.weekId === week.id && entry.photos.length > 0))
-      .map((entry) => entry.photos[0])
+      .map((entry) => getEntryCoverPhoto(entry))
       .slice(0, 4);
     const summary = summariesByWeek[week.id];
     const summaryStatus = summary?.status || 'fallback';
@@ -1673,13 +1793,16 @@ function PhotoImage({ photo, transform, eager = false }) {
   );
 }
 
-function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, index = 0, isLast = true, onRemove }) {
+function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, index = 0, isLast = true, coverState = '', onRemove, onSelectCover }) {
   const pressedX = index * (polaroidGap.pressed - polaroidGap.rest);
+  const isCoverCandidate = coverState === 'candidate';
+  const isCoverSelected = coverState === 'selected';
+  const coverLabel = isCoverSelected ? '대표사진으로 설정됨' : isCoverCandidate ? '한 번 더 누르면 대표사진으로 설정' : '대표사진 후보로 선택';
 
   return (
     <motion.span
-      className={`polaroid polaroid-${variant} ${add ? 'polaroid-add' : ''}`}
-      aria-hidden="true"
+      className={`polaroid polaroid-${variant} ${add ? 'polaroid-add' : ''} ${isCoverCandidate ? 'polaroid-cover-candidate' : ''} ${isCoverSelected ? 'polaroid-cover-selected' : ''}`}
+      aria-hidden={add ? 'true' : undefined}
       initial={false}
       animate={{ x: compact ? pressedX : 0 }}
       style={{ marginRight: isLast ? 0 : polaroidGap.rest }}
@@ -1690,6 +1813,23 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
           {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={photoTransforms.polaroid} />}
         </span>
       </span>
+      {!add && onSelectCover ? (
+        <button
+          className="polaroid-cover-control"
+          type="button"
+          aria-label={coverLabel}
+          aria-pressed={isCoverSelected}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelectCover();
+          }}
+        >
+          <span className="polaroid-cover-badge" aria-hidden="true">
+            <span className="polaroid-cover-icon">♛</span>
+            <span>대표</span>
+          </span>
+        </button>
+      ) : null}
       {!add && onRemove ? (
         <button
           className={`polaroid-remove polaroid-remove-${variant}`}
@@ -4179,7 +4319,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   const [editTargetComment, setEditTargetComment] = useState(null);
   const [deleteTargetComment, setDeleteTargetComment] = useState(null);
   const [emojiSheetCommentId, setEmojiSheetCommentId] = useState('');
-  const [emojiReactionsByComment, setEmojiReactionsByComment] = useState(readCommentEmojiReactions);
+  const [emojiReactionsByComment, setEmojiReactionsByComment] = useState(() => (hasSupabaseConfig ? {} : readCommentEmojiReactions()));
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
@@ -4274,8 +4414,12 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     selection?.addRange(range);
   }
 
-  function getCommentEmojiReactions(commentId) {
-    const reactions = emojiReactionsByComment[commentId] || {};
+  function getCommentEmojiReactions(comment) {
+    const commentId = comment?.id;
+    const reactions = {
+      ...(comment?.emojiReactions || {}),
+      ...(emojiReactionsByComment[commentId] || {}),
+    };
     const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
     return commentEmojiSlots
       .map((slot) => {
@@ -4289,63 +4433,79 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
       .filter((reaction) => reaction.count > 0 && reaction.src);
   }
 
+  function getBaseCommentEmojiReaction(commentId, emojiId) {
+    for (const entry of entries) {
+      const comment = (entry.comments || []).find((item) => item.id === commentId);
+      if (comment) return comment.emojiReactions?.[emojiId];
+    }
+
+    return undefined;
+  }
+
+  async function persistCommentEmojiReaction(commentId, emojiId, selected) {
+    if (!hasSupabaseConfig) return;
+    if (!isSupabaseUuid(commentId)) {
+      setLoadError('이전 로컬 임시 댓글은 서버에 저장할 수 없어요.');
+      return;
+    }
+
+    const request = selected
+      ? supabase
+          .from('diary_comment_emoji_reactions')
+          .upsert({ comment_id: commentId, emoji_id: emojiId, member_id: selectedMemberId }, { onConflict: 'comment_id,emoji_id,member_id' })
+      : supabase.from('diary_comment_emoji_reactions').delete().eq('comment_id', commentId).eq('emoji_id', emojiId).eq('member_id', selectedMemberId);
+    const { error } = await request;
+    if (error) {
+      if (isMissingSupabaseSchema(error)) {
+        setLoadError('댓글 이모지 반응 테이블이 아직 서버에 적용되지 않았어요.');
+        return;
+      }
+      setLoadError(error.message || '댓글 이모지 반응을 저장하지 못했어요.');
+      return;
+    }
+
+    if (selected) {
+      const entry = entries.find((entry) => (entry.comments || []).some((comment) => comment.id === commentId));
+      if (entry?.id) {
+        void notifyWebPush('comment_emoji_reacted', { entryId: entry.id, commentId, emojiId }, selectedMemberId);
+      }
+    }
+  }
+
   function selectCommentEmoji(slot) {
     if (!emojiSheetCommentId) return;
+    const commentId = emojiSheetCommentId;
 
     setEmojiReactionsByComment((current) => {
       const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
-      const currentCommentReactions = current[emojiSheetCommentId] || {};
-      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[slot.id]);
+      const currentCommentReactions = current[commentId] || {};
+      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[slot.id] || getBaseCommentEmojiReaction(commentId, slot.id));
       if (selectedReaction.selectedBy.includes(currentEmojiNickname)) {
         return current;
       }
 
-      const nextCommentReactions = {
-        ...currentCommentReactions,
-        [slot.id]: {
-          count: selectedReaction.count + 1,
-          selectedBy: [...selectedReaction.selectedBy, currentEmojiNickname],
-        },
-      };
-      const next = {
-        ...current,
-        [emojiSheetCommentId]: nextCommentReactions,
-      };
-      writeCommentEmojiReactions(next);
+      const next = setCommentEmojiReactionValue(current, commentId, slot.id, addCommentEmojiReactionValue(selectedReaction, currentEmojiNickname));
+      if (!hasSupabaseConfig) writeCommentEmojiReactions(next);
       return next;
     });
     setEmojiSheetCommentId('');
+    void persistCommentEmojiReaction(commentId, slot.id, true);
   }
 
   function toggleCommentEmojiReaction(commentId, reaction) {
+    const shouldSelect = !reaction.selected;
     setEmojiReactionsByComment((current) => {
       const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
       const currentCommentReactions = current[commentId] || {};
-      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[reaction.id]);
-      if (!selectedReaction.selectedBy.includes(currentEmojiNickname)) return current;
-
-      const nextCount = Math.max(0, selectedReaction.count - 1);
-      const nextSelectedBy = selectedReaction.selectedBy.filter((nickname) => nickname !== currentEmojiNickname);
-      const nextCommentReactions = { ...currentCommentReactions };
-
-      if (nextCount > 0) {
-        nextCommentReactions[reaction.id] = {
-          count: nextCount,
-          selectedBy: nextSelectedBy,
-        };
-      } else {
-        delete nextCommentReactions[reaction.id];
-      }
-
-      const next = { ...current };
-      if (Object.keys(nextCommentReactions).length > 0) {
-        next[commentId] = nextCommentReactions;
-      } else {
-        delete next[commentId];
-      }
-      writeCommentEmojiReactions(next);
+      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[reaction.id] || getBaseCommentEmojiReaction(commentId, reaction.id));
+      const nextReaction = shouldSelect
+        ? addCommentEmojiReactionValue(selectedReaction.count > 0 ? selectedReaction : { count: reaction.count, selectedBy: selectedReaction.selectedBy }, currentEmojiNickname)
+        : removeCommentEmojiReactionValue(selectedReaction.count > 0 ? selectedReaction : { count: reaction.count, selectedBy: [currentEmojiNickname] }, currentEmojiNickname);
+      const next = setCommentEmojiReactionValue(current, commentId, reaction.id, nextReaction);
+      if (!hasSupabaseConfig) writeCommentEmojiReactions(next);
       return next;
     });
+    void persistCommentEmojiReaction(commentId, reaction.id, shouldSelect);
   }
 
   async function submitReply(event) {
@@ -4400,7 +4560,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
               comment={comment}
               isTarget={comment.id === targetCommentId}
               rowRef={comment.id === targetCommentId ? targetCommentRef : null}
-              emojiReactions={getCommentEmojiReactions(comment.id)}
+              emojiReactions={getCommentEmojiReactions(comment)}
               onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)}
               onOpenEmojiSheet={setEmojiSheetCommentId}
               onToggleEmojiReaction={toggleCommentEmojiReaction}
@@ -4465,7 +4625,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   );
 }
 
-function UploadGrid({ photos, onFiles, onRemovePhoto }) {
+function UploadGrid({ photos, coverCandidateId = '', onFiles, onRemovePhoto, onSelectCoverPhoto }) {
   const variants = ['left', 'center', 'right', 'center', 'right', 'left'];
   const canAddPhoto = photos.length < maxUploadPhotos;
   const visibleCellCount = photos.length + (canAddPhoto ? 1 : 0);
@@ -4474,7 +4634,14 @@ function UploadGrid({ photos, onFiles, onRemovePhoto }) {
   return (
     <div className="upload-grid" data-rows={rowCount}>
       {photos.map((photo, index) => (
-        <ImagePolaroid key={photo.id} photo={photo} variant={variants[index] || 'center'} onRemove={() => onRemovePhoto(photo.id)} />
+        <ImagePolaroid
+          key={photo.id}
+          photo={photo}
+          variant={variants[index] || 'center'}
+          coverState={isCoverPhoto(photo) ? 'selected' : coverCandidateId === photo.id ? 'candidate' : ''}
+          onRemove={() => onRemovePhoto(photo.id)}
+          onSelectCover={() => onSelectCoverPhoto(photo.id)}
+        />
       ))}
       {canAddPhoto ? (
         <label className="upload-add-control" aria-label="이미지 첨부">
@@ -4503,6 +4670,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   const [date, setDate] = useState(initialDate);
   const [location, setLocation] = useState('');
   const [text, setText] = useState('');
+  const [coverCandidateId, setCoverCandidateId] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadPressed, setIsUploadPressed] = useState(false);
@@ -4557,7 +4725,21 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
     setPhotos((current) => {
       const removed = current.find((photo) => photo.id === photoId);
       if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
-      return current.filter((photo) => photo.id !== photoId);
+      return normalizePhotoCoverFlags(current.filter((photo) => photo.id !== photoId));
+    });
+    if (coverCandidateId === photoId) setCoverCandidateId('');
+  }
+
+  function selectCoverPhoto(photoId) {
+    setPhotos((current) => {
+      const photo = current.find((item) => item.id === photoId);
+      if (!photo) return current;
+      if (isCoverPhoto(photo) || coverCandidateId === photoId) {
+        setCoverCandidateId('');
+        return normalizePhotoCoverFlags(current, photoId);
+      }
+      setCoverCandidateId(photoId);
+      return normalizePhotoCoverFlags(current, '');
     });
   }
 
@@ -4574,7 +4756,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
         weekday: formatWeekday(date),
         location: location.trim(),
         nickname: currentNickname,
-        photos: photos.slice(0, maxUploadPhotos),
+        photos: normalizePhotoCoverFlags(photos),
         text: text.trim() || '어떤 하루였나요?',
         liked: false,
         likeCount: 0,
@@ -4601,7 +4783,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       <NavHeader onNavigate={onNavigate} />
       <motion.div className="upload-content" data-grid-rows={uploadGridRows} variants={uploadContentVariants} initial="hidden" animate="visible">
         <AnimatedUploadField order={0}>
-          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} />
+          <UploadGrid photos={photos} coverCandidateId={coverCandidateId} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
         </AnimatedUploadField>
         <form className="entry-form" id="entry-form" onSubmit={handleSubmit}>
           <AnimatedUploadField order={1}>
@@ -4684,10 +4866,11 @@ function LeaveEditModal({ onCancel, onLeave }) {
 
 function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUpdateEntry, onDeleteEntry }) {
   const normalizedEntry = normalizeDiaryEntry(entry);
-  const [photos, setPhotos] = useState(() => normalizedEntry.photos.map((photo) => ({ ...photo, src: getPhotoSrc(photo) })));
+  const [photos, setPhotos] = useState(() => normalizePhotoCoverFlags(normalizedEntry.photos.map((photo) => ({ ...photo, src: getPhotoSrc(photo) }))));
   const [date, setDate] = useState(normalizedEntry.date);
   const [location, setLocation] = useState(normalizedEntry.location);
   const [text, setText] = useState(normalizedEntry.text);
+  const [coverCandidateId, setCoverCandidateId] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -4716,7 +4899,21 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
     setPhotos((current) => {
       const removed = current.find((photo) => photo.id === photoId);
       if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
-      return current.filter((photo) => photo.id !== photoId);
+      return normalizePhotoCoverFlags(current.filter((photo) => photo.id !== photoId));
+    });
+    if (coverCandidateId === photoId) setCoverCandidateId('');
+  }
+
+  function selectCoverPhoto(photoId) {
+    setPhotos((current) => {
+      const photo = current.find((item) => item.id === photoId);
+      if (!photo) return current;
+      if (isCoverPhoto(photo) || coverCandidateId === photoId) {
+        setCoverCandidateId('');
+        return normalizePhotoCoverFlags(current, photoId);
+      }
+      setCoverCandidateId(photoId);
+      return normalizePhotoCoverFlags(current, '');
     });
   }
 
@@ -4732,7 +4929,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
         weekday: formatWeekday(date),
         location: location.trim(),
         text: text.trim() || '어떤 하루였나요?',
-        photos: photos.slice(0, maxUploadPhotos),
+        photos: normalizePhotoCoverFlags(photos),
       });
       revokePhotoPreviewUrls(photos);
       onNavigate('list');
@@ -4763,7 +4960,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
       <EditHeader onBack={() => setIsDeleteModalOpen(true)} onDelete={deleteEntry} />
       <div className="upload-content edit-content" data-grid-rows={uploadGridRows}>
         <StaticUploadField>
-          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} />
+          <UploadGrid photos={photos} coverCandidateId={coverCandidateId} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
         </StaticUploadField>
         <form
           className="entry-form"
@@ -4828,7 +5025,7 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
     { data: entryLikes = [], error: entryLikesError },
     { data: comments = [], error: commentsError },
   ] = await Promise.all([
-    supabase.from('diary_images').select('id, entry_id, image_url, storage_path, sort_order').in('entry_id', entryIds),
+    supabase.from('diary_images').select('id, entry_id, image_url, storage_path, sort_order, is_cover').in('entry_id', entryIds),
     supabase.from('diary_entry_likes').select('entry_id, member_id').in('entry_id', entryIds),
     supabase.from('diary_comments').select('id, entry_id, author_id, body_text, created_at').in('entry_id', entryIds).order('created_at', { ascending: true }),
   ]);
@@ -4841,10 +5038,22 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
   const { data: commentLikes = [], error: commentLikesError } = commentIds.length > 0
     ? await supabase.from('diary_comment_likes').select('comment_id, member_id').in('comment_id', commentIds)
     : { data: [], error: null };
+  const { data: commentEmojiReactions = [], error: commentEmojiReactionsError } = commentIds.length > 0
+    ? await supabase.from('diary_comment_emoji_reactions').select('comment_id, emoji_id, member_id').in('comment_id', commentIds)
+    : { data: [], error: null };
 
   if (commentLikesError) throw commentLikesError;
+  if (commentEmojiReactionsError && !isMissingSupabaseSchema(commentEmojiReactionsError)) throw commentEmojiReactionsError;
 
-  const memberIds = Array.from(new Set([...entries.map((entry) => entry.author_id), ...comments.map((comment) => comment.author_id)].filter(Boolean)));
+  const safeCommentEmojiReactions = commentEmojiReactionsError ? [] : (commentEmojiReactions || []);
+  const memberIds = Array.from(
+    new Set([
+      ...entries.map((entry) => entry.author_id),
+      ...comments.map((comment) => comment.author_id),
+      ...(commentLikes || []).map((like) => like.member_id),
+      ...safeCommentEmojiReactions.map((reaction) => reaction.member_id),
+    ].filter(Boolean))
+  );
   const { data: members = [], error: membersError } = memberIds.length > 0
     ? await supabase.from('couple_members').select('id, nickname').in('id', memberIds)
     : { data: [], error: null };
@@ -4856,6 +5065,7 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
   const likesByEntry = groupBy(entryLikes, (like) => like.entry_id);
   const commentsByEntry = groupBy(comments, (comment) => comment.entry_id);
   const likesByComment = groupBy(commentLikes, (like) => like.comment_id);
+  const emojiReactionsByComment = mapCommentEmojiReactionRows(safeCommentEmojiReactions, membersById);
 
   return sortEntriesByDate(
     entries.map((entry) => {
@@ -4869,6 +5079,8 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
           storage_path: image.storage_path,
           sortOrder: image.sort_order,
           sort_order: image.sort_order,
+          isCover: Boolean(image.is_cover),
+          is_cover: Boolean(image.is_cover),
         }));
       const likes = likesByEntry.get(entry.id) || [];
       const entryComments = (commentsByEntry.get(entry.id) || [])
@@ -4884,6 +5096,8 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
             created_at: comment.created_at,
             liked: likes.some((like) => like.member_id === viewerMemberId),
             likeCount: likes.length,
+            likedByNicknames: Array.from(new Set(likes.map((like) => membersById.get(like.member_id) || getNicknameForMemberId(like.member_id)))),
+            emojiReactions: emojiReactionsByComment[comment.id] || {},
           };
         });
 
@@ -4894,7 +5108,7 @@ async function hydrateDiaryEntries(entryRows, viewerMemberId = currentMemberId) 
         dateLabel: formatDateLabel(entry.diary_date),
         weekday: formatWeekday(entry.diary_date),
         nickname: membersById.get(entry.author_id) || getNicknameForMemberId(entry.author_id),
-        photos: entryImages,
+        photos: normalizePhotoCoverFlags(entryImages),
         text: entry.body_text,
         location: entry.location_text || '',
         createdAt: entry.created_at,
@@ -5051,6 +5265,8 @@ function isMissingSupabaseSchema(error) {
     message.includes('diary_comments') ||
     message.includes('diary_entry_likes') ||
     message.includes('diary_comment_likes') ||
+    message.includes('diary_comment_emoji_reactions') ||
+    message.includes('is_cover') ||
     message.includes('home_stickers') ||
     message.includes('PGRST200') ||
     message.includes('PGRST205')
@@ -5064,18 +5280,20 @@ function isDiaryImagesPolicyError(error) {
 }
 
 async function uploadDiaryPhotos(entryId, photos) {
+  const normalizedPhotos = normalizePhotoCoverFlags(photos);
   if (!hasSupabaseConfig) {
-    return photos.map((photo, index) => ({
+    return normalizedPhotos.map((photo, index) => ({
       entry_id: entryId,
       image_url: photo.src,
       storage_path: '',
       sort_order: index,
+      is_cover: isCoverPhoto(photo),
     }));
   }
 
   const uploaded = [];
 
-  for (const [index, photo] of photos.entries()) {
+  for (const [index, photo] of normalizedPhotos.entries()) {
     if (!photo.file) continue;
     const uploadFile = await compressPhotoForUpload(photo.file);
     const extension = uploadFile.name.split('.').pop() || 'jpg';
@@ -5093,6 +5311,7 @@ async function uploadDiaryPhotos(entryId, photos) {
       image_url: data.publicUrl,
       storage_path: storagePath,
       sort_order: index,
+      is_cover: isCoverPhoto(photo),
     });
   }
 
@@ -5106,21 +5325,22 @@ async function saveDiaryImages(entryId, photos) {
   const { data, error } = await supabase
     .from('diary_images')
     .insert(images)
-    .select('id, image_url, storage_path, sort_order');
+    .select('id, image_url, storage_path, sort_order, is_cover');
 
   if (error) throw error;
   return data || images;
 }
 
 async function buildPersistedDiaryPhotos(entryId, photos) {
-  const newUploads = await uploadDiaryPhotos(entryId, photos);
+  const normalizedPhotos = normalizePhotoCoverFlags(photos);
+  const newUploads = await uploadDiaryPhotos(entryId, normalizedPhotos);
   let uploadIndex = 0;
 
-  return photos.slice(0, maxUploadPhotos).map((photo, index) => {
+  return normalizedPhotos.map((photo, index) => {
     if (photo.file) {
       const uploaded = newUploads[uploadIndex];
       uploadIndex += 1;
-      return { ...uploaded, sort_order: index };
+      return { ...uploaded, sort_order: index, is_cover: isCoverPhoto(photo) };
     }
 
     return {
@@ -5129,13 +5349,15 @@ async function buildPersistedDiaryPhotos(entryId, photos) {
       image_url: getPhotoSrc(photo),
       storage_path: photo.storagePath || photo.storage_path || '',
       sort_order: index,
+      is_cover: isCoverPhoto(photo),
     };
   });
 }
 
 async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
+  const normalizedNextPhotos = normalizePhotoCoverFlags(nextPhotos);
   const currentImageIds = (currentPhotos || []).map((photo) => photo.id).filter(isSupabaseUuid);
-  const nextExistingIds = new Set((nextPhotos || []).filter((photo) => !photo.file).map((photo) => photo.id).filter(isSupabaseUuid));
+  const nextExistingIds = new Set(normalizedNextPhotos.filter((photo) => !photo.file).map((photo) => photo.id).filter(isSupabaseUuid));
   const removedImageIds = currentImageIds.filter((photoId) => !nextExistingIds.has(photoId));
 
   if (removedImageIds.length > 0) {
@@ -5143,11 +5365,16 @@ async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
     if (deleteImagesError) throw deleteImagesError;
   }
 
+  if (currentImageIds.length > 0) {
+    const { error: clearCoverError } = await supabase.from('diary_images').update({ is_cover: false }).in('id', currentImageIds);
+    if (clearCoverError) throw clearCoverError;
+  }
+
   const maxSortOrder = (currentPhotos || []).reduce((maxOrder, photo) => {
     const sortOrder = Number(photo.sortOrder ?? photo.sort_order);
     return Number.isFinite(sortOrder) ? Math.max(maxOrder, sortOrder) : maxOrder;
   }, -1);
-  const newPhotos = (nextPhotos || []).filter((photo) => photo.file);
+  const newPhotos = normalizedNextPhotos.filter((photo) => photo.file);
   const uploadedImages = await uploadDiaryPhotos(entryId, newPhotos);
   const insertedImages = uploadedImages.map((image, index) => ({ ...image, sort_order: maxSortOrder + index + 1 }));
 
@@ -5155,13 +5382,26 @@ async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
     const { data, error: insertImagesError } = await supabase
       .from('diary_images')
       .insert(insertedImages)
-      .select('id, image_url, storage_path, sort_order');
+      .select('id, image_url, storage_path, sort_order, is_cover');
     if (insertImagesError) throw insertImagesError;
     insertedImages.splice(0, insertedImages.length, ...(data || insertedImages));
   }
 
+  const updateResults = await Promise.all(
+    normalizedNextPhotos
+      .filter((photo) => !photo.file && isSupabaseUuid(photo.id))
+      .map((photo, index) =>
+        supabase
+          .from('diary_images')
+          .update({ sort_order: index, is_cover: isCoverPhoto(photo) })
+          .eq('id', photo.id)
+      )
+  );
+  const updateImagesError = updateResults.find((result) => result.error)?.error;
+  if (updateImagesError) throw updateImagesError;
+
   let uploadIndex = 0;
-  return (nextPhotos || []).slice(0, maxUploadPhotos).map((photo, index) => {
+  return normalizedNextPhotos.map((photo, index) => {
     if (photo.file) {
       const uploaded = insertedImages[uploadIndex];
       uploadIndex += 1;
@@ -5172,6 +5412,8 @@ async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
         storage_path: uploaded?.storage_path || photo.storagePath || photo.storage_path || '',
         sortOrder: uploaded?.sort_order ?? maxSortOrder + uploadIndex,
         sort_order: uploaded?.sort_order ?? maxSortOrder + uploadIndex,
+        isCover: Boolean(uploaded?.is_cover ?? isCoverPhoto(photo)),
+        is_cover: Boolean(uploaded?.is_cover ?? isCoverPhoto(photo)),
       };
     }
 
@@ -5182,6 +5424,8 @@ async function saveChangedDiaryImages(entryId, currentPhotos, nextPhotos) {
       storage_path: photo.storagePath || photo.storage_path || '',
       sortOrder: photo.sortOrder ?? photo.sort_order ?? index,
       sort_order: photo.sortOrder ?? photo.sort_order ?? index,
+      isCover: isCoverPhoto(photo),
+      is_cover: isCoverPhoto(photo),
     };
   });
 }
@@ -5190,10 +5434,11 @@ function buildLocalSavedEntry(entry, entryId, images) {
   const createdAt = entry.createdAt || entry.created_at || new Date().toISOString();
   const localImages =
     images ||
-    entry.photos.slice(0, maxUploadPhotos).map((photo, index) => ({
+    normalizePhotoCoverFlags(entry.photos).map((photo, index) => ({
       id: photo.id || `${entryId}-${index}`,
       src: getPhotoSrc(photo),
       storagePath: '',
+      is_cover: isCoverPhoto(photo),
     }));
 
   return {
@@ -5209,6 +5454,8 @@ function buildLocalSavedEntry(entry, entryId, images) {
       storage_path: image.storage_path || image.storagePath || '',
       sortOrder: image.sort_order ?? image.sortOrder ?? index,
       sort_order: image.sort_order ?? image.sortOrder ?? index,
+      isCover: Boolean(image.is_cover ?? image.isCover),
+      is_cover: Boolean(image.is_cover ?? image.isCover),
     })),
   };
 }
@@ -5484,6 +5731,97 @@ export default function App() {
       void supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) return undefined;
+
+    const channel = supabase
+      .channel(`comment-likes:${coupleSpaceId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'diary_comment_likes' }, (payload) => {
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        const commentId = row?.comment_id;
+        const nickname = getNicknameForMemberId(row?.member_id);
+        if (!commentId || !nickname) return;
+
+        setEntriesAndCache((current) =>
+          current.map((entry) => ({
+            ...entry,
+            comments: (entry.comments || []).map((comment) => {
+              if (comment.id !== commentId) return comment;
+
+              const currentLikedBy = Array.from(new Set(comment.likedByNicknames || []));
+              const nextLikedBy = payload.eventType === 'DELETE'
+                ? currentLikedBy.filter((item) => normalizeSelectedNickname(item) !== normalizeSelectedNickname(nickname))
+                : Array.from(new Set([...currentLikedBy, nickname]));
+
+              return {
+                ...comment,
+                liked: nextLikedBy.some((item) => normalizeSelectedNickname(item) === normalizeSelectedNickname(currentNickname)),
+                likeCount: nextLikedBy.length,
+                likedByNicknames: nextLikedBy,
+              };
+            }),
+          }))
+        );
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [currentNickname]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) return undefined;
+
+    const channel = supabase
+      .channel(`comment-emoji-reactions:${coupleSpaceId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'diary_comment_emoji_reactions' }, (payload) => {
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        const commentId = row?.comment_id;
+        const emojiId = row?.emoji_id;
+        const nickname = getNicknameForMemberId(row?.member_id);
+        if (!commentId || !emojiId || !nickname) return;
+
+        setEmojiReactionsByComment((current) => {
+          const currentReaction = current[commentId]?.[emojiId] || getBaseCommentEmojiReaction(commentId, emojiId);
+          const nextReaction = payload.eventType === 'DELETE'
+            ? removeCommentEmojiReactionValue(currentReaction, nickname)
+            : addCommentEmojiReactionValue(currentReaction, nickname);
+          return setCommentEmojiReactionValue(current, commentId, emojiId, nextReaction);
+        });
+
+        setEntriesAndCache((current) =>
+          current.map((entry) => ({
+            ...entry,
+            comments: (entry.comments || []).map((comment) => {
+              if (comment.id !== commentId) return comment;
+
+              const currentReaction = comment.emojiReactions?.[emojiId];
+              const nextReaction = payload.eventType === 'DELETE'
+                ? removeCommentEmojiReactionValue(currentReaction, nickname)
+                : addCommentEmojiReactionValue(currentReaction, nickname);
+              const nextEmojiReactions = { ...(comment.emojiReactions || {}) };
+              if (nextReaction.count > 0) {
+                nextEmojiReactions[emojiId] = nextReaction;
+              } else {
+                delete nextEmojiReactions[emojiId];
+              }
+
+              return {
+                ...comment,
+                emojiReactions: nextEmojiReactions,
+              };
+            }),
+          }))
+        );
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [entries]);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -5960,13 +6298,28 @@ export default function App() {
     if (!comment) return;
     const nextLiked = !comment.liked;
     const nextLikeCount = Math.max(0, (comment.likeCount || 0) + (nextLiked ? 1 : -1));
+    const selectedNickname = normalizeSelectedNickname(currentNickname);
+    const selectedLikeNicknames = Array.from(new Set([...(comment.likedByNicknames || []), selectedNickname]));
+    const restoredLikeNicknames = comment.likedByNicknames || [];
+    const nextLikeNicknames = nextLiked
+      ? selectedLikeNicknames
+      : restoredLikeNicknames.filter((nickname) => normalizeSelectedNickname(nickname) !== selectedNickname);
     const applyCommentLikeState = (liked, likeCount) => {
       setEntriesAndCache((current) =>
         current.map((entry) =>
           entry.id === entryId
             ? {
                 ...entry,
-                comments: (entry.comments || []).map((comment) => (comment.id === commentId ? { ...comment, liked, likeCount } : comment)),
+                comments: (entry.comments || []).map((comment) =>
+                  comment.id === commentId
+                    ? {
+                        ...comment,
+                        liked,
+                        likeCount,
+                        likedByNicknames: liked ? selectedLikeNicknames : nextLikeNicknames,
+                      }
+                    : comment
+                ),
               }
             : entry
         )
@@ -5993,14 +6346,37 @@ export default function App() {
     const { error } = await request;
     if (error) {
       setLoadError(error.message);
-      applyCommentLikeState(comment.liked, comment.likeCount || 0);
+      setEntriesAndCache((current) =>
+        current.map((entry) =>
+          entry.id === entryId
+            ? {
+                ...entry,
+                comments: (entry.comments || []).map((currentComment) =>
+                  currentComment.id === commentId
+                    ? {
+                        ...currentComment,
+                        liked: comment.liked,
+                        likeCount: comment.likeCount || 0,
+                        likedByNicknames: restoredLikeNicknames,
+                      }
+                    : currentComment
+                ),
+              }
+            : entry
+        )
+      );
+      return;
+    }
+
+    if (nextLiked) {
+      void notifyWebPush('comment_liked', { entryId, commentId }, selectedMemberId);
     }
   }
 
   async function addComment(entryId, text) {
     const commentId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const comment = { id: commentId, nickname: selectedMemberNickname, text, createdAt, created_at: createdAt, liked: false, likeCount: 0 };
+    const comment = { id: commentId, nickname: selectedMemberNickname, text, createdAt, created_at: createdAt, liked: false, likeCount: 0, likedByNicknames: [] };
 
     if (!hasSupabaseConfig) {
       setEntriesAndCache((current) => addLocalCommentToEntries(current, entryId, comment));
@@ -6076,13 +6452,15 @@ export default function App() {
     const entry = entries.find((item) => item.id === entryId);
     if (!entry) return;
 
-    const nextPhotos = changes.photos.slice(0, maxUploadPhotos).map((photo, index) => ({
+    const nextPhotos = normalizePhotoCoverFlags(changes.photos).map((photo, index) => ({
       id: photo.id || `${entryId}-${index}`,
       src: getPhotoSrc(photo),
       storagePath: photo.storagePath || photo.storage_path || '',
       storage_path: photo.storagePath || photo.storage_path || '',
       sortOrder: photo.sortOrder ?? photo.sort_order ?? index,
       sort_order: photo.sortOrder ?? photo.sort_order ?? index,
+      isCover: isCoverPhoto(photo),
+      is_cover: isCoverPhoto(photo),
       file: photo.file,
     }));
 

@@ -7,7 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type PushEventType = 'diary_created' | 'diary_liked' | 'comment_created' | 'sticker_created' | 'sticker_released';
+type PushEventType =
+  | 'diary_created'
+  | 'diary_liked'
+  | 'comment_created'
+  | 'comment_liked'
+  | 'comment_emoji_reacted'
+  | 'sticker_created'
+  | 'sticker_released';
 
 type PushRequest = {
   eventType?: PushEventType;
@@ -27,6 +34,12 @@ type EntryRow = {
   id: string;
   author_id: string;
   space_id: string;
+};
+
+type CommentRow = {
+  id: string;
+  author_id: string;
+  entry_id: string;
 };
 
 type PushSubscriptionRow = {
@@ -72,6 +85,24 @@ function buildNotification(eventType: PushEventType, nickname: string, entryId: 
     return {
       title: nickname,
       body: '좋아요를 남겼어요.',
+      url: url.toString(),
+    };
+  }
+
+  if (eventType === 'comment_liked') {
+    if (commentId) url.searchParams.set('comment', commentId);
+    return {
+      title: nickname,
+      body: '댓글에 좋아요를 남겼어요.',
+      url: url.toString(),
+    };
+  }
+
+  if (eventType === 'comment_emoji_reacted') {
+    if (commentId) url.searchParams.set('comment', commentId);
+    return {
+      title: nickname,
+      body: '댓글에 이모지 반응을 남겼어요.',
       url: url.toString(),
     };
   }
@@ -132,12 +163,16 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'eventType and actorMemberId are required' }, 400);
   }
 
-  if (!['diary_created', 'diary_liked', 'comment_created', 'sticker_created', 'sticker_released'].includes(eventType)) {
+  if (!['diary_created', 'diary_liked', 'comment_created', 'comment_liked', 'comment_emoji_reacted', 'sticker_created', 'sticker_released'].includes(eventType)) {
     return jsonResponse({ error: 'Unsupported eventType' }, 400);
   }
 
   if (eventType !== 'sticker_created' && eventType !== 'sticker_released' && !entryId) {
     return jsonResponse({ error: 'entryId is required for diary notifications' }, 400);
+  }
+
+  if ((eventType === 'comment_liked' || eventType === 'comment_emoji_reacted') && !commentId) {
+    return jsonResponse({ error: 'commentId is required for comment reaction notifications' }, 400);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -161,6 +196,21 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'Actor or diary entry not found' }, 404);
   }
 
+  let comment: CommentRow | null = null;
+  if ((eventType === 'comment_liked' || eventType === 'comment_emoji_reacted') && commentId) {
+    const { data: commentData, error: commentError } = await supabase
+      .from('diary_comments')
+      .select('id, author_id, entry_id')
+      .eq('id', commentId)
+      .single();
+
+    if (commentError || !commentData || commentData.entry_id !== entry!.id) {
+      return jsonResponse({ error: 'Comment not found' }, 404);
+    }
+
+    comment = commentData as CommentRow;
+  }
+
   let targetMemberIds: string[] = [];
 
   if (eventType === 'sticker_released') {
@@ -180,6 +230,8 @@ Deno.serve(async (request) => {
 
     if (membersError) return jsonResponse({ error: membersError.message }, 500);
     targetMemberIds = (members || []).map((member) => member.id);
+  } else if ((eventType === 'comment_liked' || eventType === 'comment_emoji_reacted') && comment && comment.author_id !== actorMemberId) {
+    targetMemberIds = [comment.author_id];
   } else if (entry!.author_id !== actorMemberId) {
     targetMemberIds = [entry!.author_id];
   }

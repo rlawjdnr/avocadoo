@@ -30,9 +30,14 @@ create table if not exists public.diary_images (
   image_url text not null,
   storage_path text not null,
   sort_order integer not null default 0,
+  is_cover boolean not null default false,
   created_at timestamptz not null default now(),
   unique (entry_id, sort_order)
 );
+
+create unique index if not exists diary_images_one_cover_per_entry
+  on public.diary_images (entry_id)
+  where is_cover;
 
 create table if not exists public.diary_comments (
   id uuid primary key default gen_random_uuid(),
@@ -56,6 +61,14 @@ create table if not exists public.diary_comment_likes (
   member_id uuid not null references public.couple_members(id) on delete cascade,
   created_at timestamptz not null default now(),
   unique (comment_id, member_id)
+);
+
+create table if not exists public.diary_comment_emoji_reactions (
+  comment_id uuid not null references public.diary_comments(id) on delete cascade,
+  emoji_id text not null,
+  member_id uuid not null references public.couple_members(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (comment_id, emoji_id, member_id)
 );
 
 create table if not exists public.push_subscriptions (
@@ -137,6 +150,7 @@ alter table public.diary_images enable row level security;
 alter table public.diary_comments enable row level security;
 alter table public.diary_entry_likes enable row level security;
 alter table public.diary_comment_likes enable row level security;
+alter table public.diary_comment_emoji_reactions enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.home_stickers enable row level security;
 alter table public.weekly_summaries enable row level security;
@@ -244,6 +258,21 @@ create policy "public delete diary comment likes"
   on public.diary_comment_likes for delete
   using (true);
 
+drop policy if exists "public read diary comment emoji reactions" on public.diary_comment_emoji_reactions;
+create policy "public read diary comment emoji reactions"
+  on public.diary_comment_emoji_reactions for select
+  using (true);
+
+drop policy if exists "public insert diary comment emoji reactions" on public.diary_comment_emoji_reactions;
+create policy "public insert diary comment emoji reactions"
+  on public.diary_comment_emoji_reactions for insert
+  with check (true);
+
+drop policy if exists "public delete diary comment emoji reactions" on public.diary_comment_emoji_reactions;
+create policy "public delete diary comment emoji reactions"
+  on public.diary_comment_emoji_reactions for delete
+  using (true);
+
 drop policy if exists "public read push subscriptions" on public.push_subscriptions;
 create policy "public read push subscriptions"
   on public.push_subscriptions for select
@@ -289,6 +318,14 @@ create policy "public read weekly summaries"
 do $$
 begin
   alter publication supabase_realtime add table public.home_stickers;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.diary_comment_emoji_reactions;
 exception
   when duplicate_object then null;
   when undefined_object then null;

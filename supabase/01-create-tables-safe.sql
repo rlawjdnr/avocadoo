@@ -30,9 +30,14 @@ create table if not exists public.diary_images (
   image_url text not null,
   storage_path text not null,
   sort_order integer not null default 0,
+  is_cover boolean not null default false,
   created_at timestamptz not null default now(),
   unique (entry_id, sort_order)
 );
+
+create unique index if not exists diary_images_one_cover_per_entry
+  on public.diary_images (entry_id)
+  where is_cover;
 
 create table if not exists public.diary_comments (
   id uuid primary key default gen_random_uuid(),
@@ -60,6 +65,9 @@ create table if not exists public.diary_comment_likes (
 
 do $$
 begin
+  alter table public.diary_images
+    add column if not exists is_cover boolean not null default false;
+
   if not exists (select 1 from pg_constraint where conname = 'couple_members_space_id_fkey') then
     alter table public.couple_members
       add constraint couple_members_space_id_fkey
