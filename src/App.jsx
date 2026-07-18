@@ -5790,7 +5790,7 @@ export default function App() {
 
               return {
                 ...comment,
-                liked: nextLikedBy.some((item) => normalizeSelectedNickname(item) === normalizeSelectedNickname(currentNickname)),
+                liked: nextLikedBy.some((item) => normalizeSelectedNickname(item) === normalizeSelectedNickname(selectedMemberNickname)),
                 likeCount: nextLikedBy.length,
                 likedByNicknames: nextLikedBy,
               };
@@ -5803,7 +5803,7 @@ export default function App() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [currentNickname]);
+  }, [selectedMemberNickname]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) return undefined;
@@ -6332,12 +6332,12 @@ export default function App() {
     if (!comment) return;
     const nextLiked = !comment.liked;
     const nextLikeCount = Math.max(0, (comment.likeCount || 0) + (nextLiked ? 1 : -1));
-    const selectedNickname = normalizeSelectedNickname(currentNickname);
-    const selectedLikeNicknames = Array.from(new Set([...(comment.likedByNicknames || []), selectedNickname]));
+    const currentLikeNickname = normalizeSelectedNickname(selectedMemberNickname);
+    const selectedLikeNicknames = Array.from(new Set([...(comment.likedByNicknames || []), currentLikeNickname]));
     const restoredLikeNicknames = comment.likedByNicknames || [];
     const nextLikeNicknames = nextLiked
       ? selectedLikeNicknames
-      : restoredLikeNicknames.filter((nickname) => normalizeSelectedNickname(nickname) !== selectedNickname);
+      : restoredLikeNicknames.filter((nickname) => normalizeSelectedNickname(nickname) !== currentLikeNickname);
     const applyCommentLikeState = (liked, likeCount) => {
       setEntriesAndCache((current) =>
         current.map((entry) =>
