@@ -1028,8 +1028,9 @@ body.splash-active .screen-stage {
 
 .polaroid-cover-badge {
   position: absolute;
-  left: 1px;
-  top: 8px;
+  z-index: 2;
+  left: -3px;
+  top: 4px;
   display: none;
   align-items: center;
   gap: 1px;
@@ -1042,17 +1043,12 @@ body.splash-active .screen-stage {
   font-weight: 500;
   line-height: 13px;
   white-space: nowrap;
-  transform: rotate(-4deg);
-  transform-origin: left top;
 }
 
 .polaroid-cover-icon {
-  display: inline-grid;
-  place-items: center;
   width: 10px;
   height: 10px;
-  font-size: 8px;
-  line-height: 1;
+  display: block;
 }
 
 .polaroid-cover-candidate .polaroid-cover-badge,

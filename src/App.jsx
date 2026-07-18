@@ -39,6 +39,7 @@ const assets = {
   upload: './assets/icon-upload.svg',
   pencil: './assets/icon-pencil.svg',
   photoDelete: './assets/icon-photo-delete.svg',
+  coverPhoto: './assets/icon-cover-photo.svg',
   stickerDelete: './assets/icon-sticker-delete.svg',
   modalClose: './assets/icon-modal-close.svg',
   letterName: './assets/letter-name.svg',
@@ -1812,6 +1813,12 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
       transition={compact ? polaroidPressSpring : polaroidReleaseSpring}
     >
       <span className="polaroid-paper">
+        {!add && onSelectCover ? (
+          <span className="polaroid-cover-badge" aria-hidden="true">
+            <img className="polaroid-cover-icon" src={assets.coverPhoto} alt="" />
+            <span>대표</span>
+          </span>
+        ) : null}
         <span className="polaroid-image">
           {add ? <img className="plus-asset" src={assets.plus} alt="" /> : <PhotoImage photo={photo} transform={photoTransforms.polaroid} />}
         </span>
@@ -1826,12 +1833,7 @@ function ImagePolaroid({ photo, variant = 'center', add = false, compact = false
             event.stopPropagation();
             onSelectCover();
           }}
-        >
-          <span className="polaroid-cover-badge" aria-hidden="true">
-            <span className="polaroid-cover-icon">♛</span>
-            <span>대표</span>
-          </span>
-        </button>
+        />
       ) : null}
       {!add && onRemove ? (
         <button
