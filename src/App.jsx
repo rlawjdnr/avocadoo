@@ -4318,7 +4318,7 @@ function CommentEmojiSheet({ visible, onSelectEmoji, onClose }) {
   );
 }
 
-function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onUpdateComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
+function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onUpdateComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname, selectedMemberId = currentMemberId, onLoadError = () => {} }) {
   const [reply, setReply] = useState('');
   const [editTargetComment, setEditTargetComment] = useState(null);
   const [deleteTargetComment, setDeleteTargetComment] = useState(null);
@@ -4438,18 +4438,14 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   }
 
   function getBaseCommentEmojiReaction(commentId, emojiId) {
-    for (const entry of entries) {
-      const comment = (entry.comments || []).find((item) => item.id === commentId);
-      if (comment) return comment.emojiReactions?.[emojiId];
-    }
-
-    return undefined;
+    const comment = (entry?.comments || []).find((item) => item.id === commentId);
+    return comment?.emojiReactions?.[emojiId];
   }
 
   async function persistCommentEmojiReaction(commentId, emojiId, selected) {
     if (!hasSupabaseConfig) return;
     if (!isSupabaseUuid(commentId)) {
-      setLoadError('이전 로컬 임시 댓글은 서버에 저장할 수 없어요.');
+      onLoadError('이전 로컬 임시 댓글은 서버에 저장할 수 없어요.');
       return;
     }
 
@@ -4461,15 +4457,14 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     const { error } = await request;
     if (error) {
       if (isMissingSupabaseSchema(error)) {
-        setLoadError('댓글 이모지 반응 테이블이 아직 서버에 적용되지 않았어요.');
+        onLoadError('댓글 이모지 반응 테이블이 아직 서버에 적용되지 않았어요.');
         return;
       }
-      setLoadError(error.message || '댓글 이모지 반응을 저장하지 못했어요.');
+      onLoadError(error.message || '댓글 이모지 반응을 저장하지 못했어요.');
       return;
     }
 
     if (selected) {
-      const entry = entries.find((entry) => (entry.comments || []).some((comment) => comment.id === commentId));
       if (entry?.id) {
         void notifyWebPush('comment_emoji_reacted', { entryId: entry.id, commentId, emojiId }, selectedMemberId);
       }
@@ -5804,14 +5799,6 @@ export default function App() {
         const nickname = getNicknameForMemberId(row?.member_id);
         if (!commentId || !emojiId || !nickname) return;
 
-        setEmojiReactionsByComment((current) => {
-          const currentReaction = current[commentId]?.[emojiId] || getBaseCommentEmojiReaction(commentId, emojiId);
-          const nextReaction = payload.eventType === 'DELETE'
-            ? removeCommentEmojiReactionValue(currentReaction, nickname)
-            : addCommentEmojiReactionValue(currentReaction, nickname);
-          return setCommentEmojiReactionValue(current, commentId, emojiId, nextReaction);
-        });
-
         setEntriesAndCache((current) =>
           current.map((entry) => ({
             ...entry,
@@ -6688,6 +6675,8 @@ export default function App() {
           onDeleteComment={deleteComment}
           onEditEntry={openEditEntry}
           currentNickname={selectedMemberNickname}
+          selectedMemberId={selectedMemberId}
+          onLoadError={setLoadError}
         />
       ) : null}
       {showEdit && selectedEntry ? (
