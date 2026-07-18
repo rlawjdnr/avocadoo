@@ -33,6 +33,7 @@ const assets = {
   likeOutline: './assets/icon-like-outline.svg',
   likeFilled: './assets/icon-like-filled.svg',
   comment: './assets/icon-comment.svg',
+  commentEmojiAdd: './assets/icon-comment-emoji-add.svg',
   locationPin: './assets/icon-location-pin.svg',
   send: './assets/icon-send.svg',
   upload: './assets/icon-upload.svg',
@@ -69,6 +70,21 @@ const seededMemberIdsByNickname = {
 const selectedNicknameStorageKey = 'avocadoo.member.nickname.v1';
 const notificationReadStorageKey = 'avocadoo.notifications.readAt.v1';
 const weeklySummaryStorageKey = 'avocadoo.weeklySummaries.v2';
+const commentEmojiReactionsStorageKey = 'avocadoo.commentEmojiReactions.v1';
+const commentEmojiSlots = [
+  { id: 'emoji-1', src: './assets/comment-emoji-avocado-1.png' },
+  { id: 'emoji-2', src: './assets/comment-emoji-avocado-2.png' },
+  { id: 'emoji-3', src: './assets/comment-emoji-avocado-3.png' },
+  { id: 'emoji-4', src: './assets/comment-emoji-avocado-4.png' },
+  { id: 'emoji-5', src: './assets/comment-emoji-avocado-5.png' },
+  { id: 'emoji-6', src: './assets/comment-emoji-avocado-6.png' },
+  { id: 'emoji-7', src: './assets/comment-emoji-avocado-7.png' },
+  { id: 'emoji-8', src: './assets/comment-emoji-avocado-8.png' },
+  { id: 'emoji-9', src: '' },
+  { id: 'emoji-10', src: '' },
+  { id: 'emoji-11', src: '' },
+  { id: 'emoji-12', src: '' },
+];
 const appThemeColor = '#FAF9F7';
 const appSplashThemeColor = '#ffffff';
 const appDimThemeColor = '#7d7c7a';
@@ -1082,6 +1098,41 @@ function writeNotificationReadAt(memberId = currentMemberId, value = new Date().
   }
 }
 
+function readCommentEmojiReactions() {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const stored = window.localStorage.getItem(commentEmojiReactionsStorageKey);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCommentEmojiReactions(reactionsByComment) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(commentEmojiReactionsStorageKey, JSON.stringify(reactionsByComment));
+  } catch {
+    // Emoji reactions are decorative; ignore storage failures.
+  }
+}
+
+function normalizeCommentEmojiReaction(value) {
+  if (typeof value === 'number') {
+    return { count: value, selectedBy: [] };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return { count: 0, selectedBy: [] };
+  }
+
+  const count = Number.isFinite(value.count) ? Math.max(0, value.count) : 0;
+  const selectedBy = Array.isArray(value.selectedBy) ? value.selectedBy.map(normalizeSelectedNickname) : [];
+  return { count, selectedBy: Array.from(new Set(selectedBy)) };
+}
+
 function createPhotoPreviewUrl(file) {
   return URL.createObjectURL(file);
 }
@@ -1382,6 +1433,8 @@ function getNotificationNickname(nickname, memberId = '') {
 function buildNotifications(entries, currentNickname = currentMemberNickname, stickersByMonth = {}) {
   const notifications = [];
   const retentionCutoff = Date.now() - notificationRetentionDays * 24 * 60 * 60 * 1000;
+  const currentNotificationNickname = normalizeSelectedNickname(currentNickname);
+  const isPartnerActivity = (nickname) => normalizeSelectedNickname(nickname) !== currentNotificationNickname;
 
   entries.forEach((entry) => {
     const entryCreatedAt = entry.createdAt || entry.created_at || entry.date;
@@ -1389,7 +1442,7 @@ function buildNotifications(entries, currentNickname = currentMemberNickname, st
     const entryDateLabel = entry.dateLabel || formatDateLabel(entry.date);
     const entryNickname = getNotificationNickname(entry.nickname, entry.author_id || entry.authorId);
 
-    if (memberNicknames.includes(entryNickname)) {
+    if (memberNicknames.includes(entryNickname) && isPartnerActivity(entryNickname)) {
       notifications.push({
         id: `diary-created-${entry.id}`,
         type: 'diary_created',
@@ -1401,7 +1454,7 @@ function buildNotifications(entries, currentNickname = currentMemberNickname, st
       });
     }
 
-    if (memberNicknames.includes(entryNickname) && (entry.likeCount || 0) > 0) {
+    if (memberNicknames.includes(entryNickname) && !isPartnerActivity(entryNickname) && (entry.likeCount || 0) > 0) {
       const likeNickname = getPartnerNickname(entryNickname);
       notifications.push({
         id: `diary-liked-${entry.id}-${entry.likeCount}`,
@@ -1419,7 +1472,7 @@ function buildNotifications(entries, currentNickname = currentMemberNickname, st
       const commentTime = getNotificationTimeValue(commentCreatedAt, entryCreatedAt);
       const commentNickname = getNotificationNickname(comment.nickname, comment.author_id || comment.authorId);
 
-      if (memberNicknames.includes(commentNickname)) {
+      if (memberNicknames.includes(commentNickname) && isPartnerActivity(commentNickname)) {
         notifications.push({
           id: `comment-created-${comment.id}`,
           type: 'comment_created',
@@ -1444,6 +1497,7 @@ function buildNotifications(entries, currentNickname = currentMemberNickname, st
       if (!timeValue) return;
 
       const nickname = getNotificationNickname(sticker.createdByNickname || sticker.created_by_nickname, sticker.createdBy || sticker.created_by);
+      if (!isPartnerActivity(nickname)) return;
       const key = `${monthKey}-${nickname}-${createdAt}`;
       const currentGroup = stickerGroups.get(key) || {
         count: 0,
@@ -3970,7 +4024,7 @@ function List({ active = true, entries, onNavigate, selectedWeek, transitionKind
   );
 }
 
-function CommentRow({ comment, onToggleCommentLike, onRequestEdit, onRequestDelete, isTarget = false, rowRef }) {
+function CommentRow({ comment, emojiReactions = [], onToggleCommentLike, onOpenEmojiSheet, onToggleEmojiReaction, onRequestEdit, onRequestDelete, isTarget = false, rowRef }) {
   const createdAtText = formatCommentCreatedAt(comment.createdAt || comment.created_at);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const actionMenuRef = useRef(null);
@@ -3997,14 +4051,51 @@ function CommentRow({ comment, onToggleCommentLike, onRequestEdit, onRequestDele
             {createdAtText ? <time dateTime={comment.createdAt || comment.created_at}>{createdAtText}</time> : null}
           </span>
           <p>{comment.text}</p>
-          <ReactionButton
-            icon={assets.likeOutline}
-            activeIcon={assets.likeFilled}
-            active={comment.liked}
-            label="댓글 좋아요"
-            compact
-            onClick={() => onToggleCommentLike(comment.id)}
-          />
+          <div className="comment-reaction-row">
+            <ReactionButton
+              icon={assets.likeOutline}
+              activeIcon={assets.likeFilled}
+              active={comment.liked}
+              label="댓글 좋아요"
+              compact
+              onClick={() => onToggleCommentLike(comment.id)}
+            />
+            <AnimatePresence initial={false} mode="popLayout">
+              {emojiReactions.map((reaction) => (
+                <motion.button
+                  className={reaction.selected ? 'comment-emoji-chip comment-emoji-chip-selected' : 'comment-emoji-chip'}
+                  type="button"
+                  key={reaction.id}
+                  aria-label={reaction.selected ? '댓글 이모지 반응 취소' : '댓글 이모지 반응'}
+                  layout
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  whileTap={{ scale: 0.94 }}
+                  transition={{
+                    layout: { type: 'spring', stiffness: 800, damping: 50 },
+                    scale: { type: 'spring', stiffness: 800, damping: 50 },
+                    opacity: { duration: 0.08, ease: [0, 0, 0.2, 1] },
+                  }}
+                  onClick={() => onToggleEmojiReaction(comment.id, reaction)}
+                >
+                  {reaction.src ? <img src={reaction.src} alt="" /> : <span aria-hidden="true" />}
+                  <em>{reaction.count}</em>
+                </motion.button>
+              ))}
+            </AnimatePresence>
+            <motion.button
+              className="comment-emoji-add-button"
+              type="button"
+              aria-label="댓글 이모지 추가"
+              layout
+              whileTap={{ scale: 0.94 }}
+              transition={{ layout: { type: 'spring', stiffness: 800, damping: 50 }, scale: { type: 'spring', stiffness: 800, damping: 50 } }}
+              onClick={() => onOpenEmojiSheet(comment.id)}
+            >
+              <img src={assets.commentEmojiAdd} alt="" />
+            </motion.button>
+          </div>
         </div>
       </div>
       <div className="comment-actions">
@@ -4052,10 +4143,43 @@ function CommentRow({ comment, onToggleCommentLike, onRequestEdit, onRequestDele
   );
 }
 
+function CommentEmojiSheet({ visible, onSelectEmoji, onClose }) {
+  return (
+    <AnimatePresence>
+      {visible ? (
+        <motion.div className="comment-emoji-sheet-layer" role="presentation" onPointerDown={onClose}>
+          <motion.section
+            className="comment-emoji-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="댓글 이모지 추가"
+            initial={{ y: 267 }}
+            animate={{ y: 0 }}
+            exit={{ y: 267 }}
+            transition={screenPushTransition}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="comment-emoji-sheet-handle" />
+            <div className="comment-emoji-grid">
+              {commentEmojiSlots.map((slot) => (
+                <button className="comment-emoji-slot" type="button" key={slot.id} aria-label="이모지 선택" onClick={() => onSelectEmoji(slot)}>
+                  {slot.src ? <img src={slot.src} alt="" /> : null}
+                </button>
+              ))}
+            </div>
+          </motion.section>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 function CommentsScreen({ active = true, entry, targetCommentId = '', transitionKind, onNavigate, onToggleLike, onToggleCommentLike, onAddComment, onUpdateComment, onDeleteComment, onEditEntry, screenPushDistance, currentNickname = currentMemberNickname }) {
   const [reply, setReply] = useState('');
   const [editTargetComment, setEditTargetComment] = useState(null);
   const [deleteTargetComment, setDeleteTargetComment] = useState(null);
+  const [emojiSheetCommentId, setEmojiSheetCommentId] = useState('');
+  const [emojiReactionsByComment, setEmojiReactionsByComment] = useState(readCommentEmojiReactions);
   const [isReplyFocused, setIsReplyFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
@@ -4150,6 +4274,80 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
     selection?.addRange(range);
   }
 
+  function getCommentEmojiReactions(commentId) {
+    const reactions = emojiReactionsByComment[commentId] || {};
+    const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
+    return commentEmojiSlots
+      .map((slot) => {
+        const reaction = normalizeCommentEmojiReaction(reactions[slot.id]);
+        return {
+          ...slot,
+          count: reaction.count,
+          selected: reaction.selectedBy.includes(currentEmojiNickname),
+        };
+      })
+      .filter((reaction) => reaction.count > 0 && reaction.src);
+  }
+
+  function selectCommentEmoji(slot) {
+    if (!emojiSheetCommentId) return;
+
+    setEmojiReactionsByComment((current) => {
+      const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
+      const currentCommentReactions = current[emojiSheetCommentId] || {};
+      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[slot.id]);
+      if (selectedReaction.selectedBy.includes(currentEmojiNickname)) {
+        return current;
+      }
+
+      const nextCommentReactions = {
+        ...currentCommentReactions,
+        [slot.id]: {
+          count: selectedReaction.count + 1,
+          selectedBy: [...selectedReaction.selectedBy, currentEmojiNickname],
+        },
+      };
+      const next = {
+        ...current,
+        [emojiSheetCommentId]: nextCommentReactions,
+      };
+      writeCommentEmojiReactions(next);
+      return next;
+    });
+    setEmojiSheetCommentId('');
+  }
+
+  function toggleCommentEmojiReaction(commentId, reaction) {
+    setEmojiReactionsByComment((current) => {
+      const currentEmojiNickname = normalizeSelectedNickname(currentNickname);
+      const currentCommentReactions = current[commentId] || {};
+      const selectedReaction = normalizeCommentEmojiReaction(currentCommentReactions[reaction.id]);
+      if (!selectedReaction.selectedBy.includes(currentEmojiNickname)) return current;
+
+      const nextCount = Math.max(0, selectedReaction.count - 1);
+      const nextSelectedBy = selectedReaction.selectedBy.filter((nickname) => nickname !== currentEmojiNickname);
+      const nextCommentReactions = { ...currentCommentReactions };
+
+      if (nextCount > 0) {
+        nextCommentReactions[reaction.id] = {
+          count: nextCount,
+          selectedBy: nextSelectedBy,
+        };
+      } else {
+        delete nextCommentReactions[reaction.id];
+      }
+
+      const next = { ...current };
+      if (Object.keys(nextCommentReactions).length > 0) {
+        next[commentId] = nextCommentReactions;
+      } else {
+        delete next[commentId];
+      }
+      writeCommentEmojiReactions(next);
+      return next;
+    });
+  }
+
   async function submitReply(event) {
     event.preventDefault();
     await sendReply();
@@ -4202,7 +4400,10 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
               comment={comment}
               isTarget={comment.id === targetCommentId}
               rowRef={comment.id === targetCommentId ? targetCommentRef : null}
+              emojiReactions={getCommentEmojiReactions(comment.id)}
               onToggleCommentLike={(commentId) => onToggleCommentLike(entry.id, commentId)}
+              onOpenEmojiSheet={setEmojiSheetCommentId}
+              onToggleEmojiReaction={toggleCommentEmojiReaction}
               onRequestEdit={requestEditComment}
               onRequestDelete={setDeleteTargetComment}
             />
@@ -4239,6 +4440,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
           </button>
         </div>
       </form>
+      <CommentEmojiSheet visible={Boolean(emojiSheetCommentId)} onSelectEmoji={selectCommentEmoji} onClose={() => setEmojiSheetCommentId('')} />
       <AnimatePresence>
         {deleteTargetComment ? (
           <div className="edit-modal-layer comment-delete-modal-layer" role="presentation">

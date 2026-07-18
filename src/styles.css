@@ -414,16 +414,19 @@ body.splash-active .screen-stage {
 
 .notification-button {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   padding: 0;
-  background: transparent;
+  border-radius: 999px;
+  background: #f2f2f2;
+  overflow: visible;
 }
 
 .notification-button img {
   display: block;
   width: 40px;
   height: 40px;
+  margin: -1px;
 }
 
 .notification-screen {
@@ -1720,7 +1723,7 @@ body.splash-active .screen-stage {
   flex: 0 0 auto;
 }
 
-.comment-copy div {
+.comment-copy > div {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1754,18 +1757,92 @@ body.splash-active .screen-stage {
   line-height: 22px;
 }
 
-.comment-copy .reaction-button {
+.comment-reaction-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-top: 4px;
+}
+
+.comment-reaction-row .reaction-button {
   width: 28px;
   min-width: 28px;
   height: 28px;
-  margin-top: 2px;
   margin-left: -5.6px;
   padding: 5.6px;
+  transition: transform 0.12s cubic-bezier(0, 0, 0.2, 1);
+  touch-action: manipulation;
 }
 
-.comment-copy .reaction-button img {
+.comment-reaction-row .reaction-button img {
   width: 16.8px;
   height: 16.8px;
+}
+
+.comment-reaction-row .reaction-button:active {
+  transform: scale(0.92);
+}
+
+.comment-emoji-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  background: linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.2)), #e9e9e9;
+  color: #000000;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  touch-action: manipulation;
+}
+
+.comment-emoji-chip img,
+.comment-emoji-chip span {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.comment-emoji-chip span {
+  border-radius: 6px;
+  background: rgba(42, 48, 56, 0.08);
+}
+
+.comment-emoji-chip em {
+  font-style: normal;
+  color: #2a3038;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.comment-emoji-chip-selected {
+  border-color: #7acc2d;
+  background: #f5ffed;
+}
+
+.comment-emoji-chip-selected em {
+  color: #7acc2d;
+}
+
+.comment-emoji-add-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  border-radius: 999px;
+  background: linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.2)), #e9e9e9;
+  touch-action: manipulation;
+}
+
+.comment-emoji-add-button img {
+  width: 22px;
+  height: 22px;
 }
 
 .comment-actions {
@@ -1835,6 +1912,61 @@ body.splash-active .screen-stage {
   background: #ef4444;
 }
 
+.comment-emoji-sheet-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 160;
+  pointer-events: auto;
+}
+
+.comment-emoji-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 267px;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  background: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.comment-emoji-sheet-handle {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 40px;
+  height: 5px;
+  border-radius: 12px;
+  background: #d9d9d9;
+  transform: translateX(-50%);
+}
+
+.comment-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px 0;
+  width: 100%;
+  padding: 45px 20px 0;
+}
+
+.comment-emoji-slot {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 48px;
+  padding: 0;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.comment-emoji-slot img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
 .reply-composer {
   --reply-keyboard-bottom: 0px;
   position: absolute;
@@ -1858,7 +1990,18 @@ body.splash-active .screen-stage {
   height: 52px;
   padding: 10px 12px;
   border-radius: 999px;
-  background: #e9e9e9;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow:
+    0 12px 50px rgba(42, 48, 56, 0.18),
+    inset 0 0 0 0.5px rgba(42, 48, 56, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.12s cubic-bezier(0, 0, 0.2, 1);
+  touch-action: manipulation;
+}
+
+.reply-field:active {
+  transform: scale(0.985);
 }
 
 .reply-field > img {
@@ -1902,6 +2045,12 @@ body.splash-active .screen-stage {
   padding: 4px;
   border-radius: 999px;
   background: #bfc3bc;
+  transition: transform 0.12s cubic-bezier(0, 0, 0.2, 1);
+  touch-action: manipulation;
+}
+
+.reply-send:active {
+  transform: scale(0.92);
 }
 
 .reply-send-active {

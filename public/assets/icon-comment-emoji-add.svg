@@ -1,0 +1,9 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame">
+<path id="Vector" d="M10.5018 2.45552C9.74185 2.40515 8.96126 2.46972 8.18239 2.66266C4.13009 3.6665 1.65882 7.7653 2.66266 11.8176C3.6665 15.8699 7.7653 18.3412 11.8176 17.3373C15.4542 16.4365 17.8175 13.043 17.5386 9.42753" stroke="var(--stroke-0, #2A3038)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M14.5356 10.7557C14.3553 11.8233 13.7989 12.7912 12.9671 13.4844C12.1352 14.1776 11.0828 14.5503 10.0002 14.5352C8.91746 14.5503 7.86508 14.1776 7.03325 13.4844C6.20142 12.7912 5.64504 11.8233 5.46468 10.7557H14.5356Z" stroke="var(--stroke-0, #2A3038)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M7.73275 7.73197H7.74108" stroke="var(--stroke-0, #2A3038)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M12.2679 7.73197H12.2762" stroke="var(--stroke-0, #2A3038)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Union" d="M16.014 1.00419C16.3897 1.00419 16.6946 1.30916 16.6947 1.68486V3.30497H18.3158C18.6911 3.30539 18.9954 3.61017 18.9954 3.98564C18.9954 4.36111 18.6911 4.66588 18.3158 4.6663H16.6947V6.28642C16.6945 6.66201 16.3896 6.96611 16.014 6.96611C15.6385 6.96597 15.3335 6.66193 15.3333 6.28642V4.6663H13.7142C13.3385 4.6663 13.0335 4.36137 13.0335 3.98564C13.0335 3.60992 13.3385 3.30497 13.7142 3.30497H15.3333V1.68486C15.3334 1.30924 15.6384 1.00432 16.014 1.00419Z" fill="var(--fill-0, #2A3038)"/>
+</g>
+</svg>
