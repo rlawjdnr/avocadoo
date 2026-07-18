@@ -1799,13 +1799,12 @@ function PhotoImage({ photo, transform, eager = false }) {
 
 function ImagePolaroid({ photo, variant = 'center', add = false, compact = false, index = 0, isLast = true, coverState = '', onRemove, onSelectCover }) {
   const pressedX = index * (polaroidGap.pressed - polaroidGap.rest);
-  const isCoverCandidate = coverState === 'candidate';
   const isCoverSelected = coverState === 'selected';
-  const coverLabel = isCoverSelected ? '대표사진으로 설정됨' : isCoverCandidate ? '한 번 더 누르면 대표사진으로 설정' : '대표사진 후보로 선택';
+  const coverLabel = isCoverSelected ? '대표사진으로 설정됨' : '대표사진으로 설정';
 
   return (
     <motion.span
-      className={`polaroid polaroid-${variant} ${add ? 'polaroid-add' : ''} ${isCoverCandidate ? 'polaroid-cover-candidate' : ''} ${isCoverSelected ? 'polaroid-cover-selected' : ''}`}
+      className={`polaroid polaroid-${variant} ${add ? 'polaroid-add' : ''} ${isCoverSelected ? 'polaroid-cover-selected' : ''}`}
       aria-hidden={add ? 'true' : undefined}
       initial={false}
       animate={{ x: compact ? pressedX : 0 }}
@@ -4630,7 +4629,7 @@ function CommentsScreen({ active = true, entry, targetCommentId = '', transition
   );
 }
 
-function UploadGrid({ photos, coverCandidateId = '', onFiles, onRemovePhoto, onSelectCoverPhoto }) {
+function UploadGrid({ photos, onFiles, onRemovePhoto, onSelectCoverPhoto }) {
   const variants = ['left', 'center', 'right', 'center', 'right', 'left'];
   const canAddPhoto = photos.length < maxUploadPhotos;
   const visibleCellCount = photos.length + (canAddPhoto ? 1 : 0);
@@ -4643,7 +4642,7 @@ function UploadGrid({ photos, coverCandidateId = '', onFiles, onRemovePhoto, onS
           key={photo.id}
           photo={photo}
           variant={variants[index] || 'center'}
-          coverState={isCoverPhoto(photo) ? 'selected' : coverCandidateId === photo.id ? 'candidate' : ''}
+          coverState={isCoverPhoto(photo) ? 'selected' : ''}
           onRemove={() => onRemovePhoto(photo.id)}
           onSelectCover={() => onSelectCoverPhoto(photo.id)}
         />
@@ -4675,7 +4674,6 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   const [date, setDate] = useState(initialDate);
   const [location, setLocation] = useState('');
   const [text, setText] = useState('');
-  const [coverCandidateId, setCoverCandidateId] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadPressed, setIsUploadPressed] = useState(false);
@@ -4732,19 +4730,13 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
       return normalizePhotoCoverFlags(current.filter((photo) => photo.id !== photoId));
     });
-    if (coverCandidateId === photoId) setCoverCandidateId('');
   }
 
   function selectCoverPhoto(photoId) {
     setPhotos((current) => {
       const photo = current.find((item) => item.id === photoId);
       if (!photo) return current;
-      if (isCoverPhoto(photo) || coverCandidateId === photoId) {
-        setCoverCandidateId('');
-        return normalizePhotoCoverFlags(current, photoId);
-      }
-      setCoverCandidateId(photoId);
-      return normalizePhotoCoverFlags(current, '');
+      return normalizePhotoCoverFlags(current, photoId);
     });
   }
 
@@ -4788,7 +4780,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
       <NavHeader onNavigate={onNavigate} />
       <motion.div className="upload-content" data-grid-rows={uploadGridRows} variants={uploadContentVariants} initial="hidden" animate="visible">
         <AnimatedUploadField order={0}>
-          <UploadGrid photos={photos} coverCandidateId={coverCandidateId} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
+          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
         </AnimatedUploadField>
         <form className="entry-form" id="entry-form" onSubmit={handleSubmit}>
           <AnimatedUploadField order={1}>
@@ -4875,7 +4867,6 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   const [date, setDate] = useState(normalizedEntry.date);
   const [location, setLocation] = useState(normalizedEntry.location);
   const [text, setText] = useState(normalizedEntry.text);
-  const [coverCandidateId, setCoverCandidateId] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -4906,19 +4897,13 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
       if (removed?.file && removed.src?.startsWith('blob:')) URL.revokeObjectURL(removed.src);
       return normalizePhotoCoverFlags(current.filter((photo) => photo.id !== photoId));
     });
-    if (coverCandidateId === photoId) setCoverCandidateId('');
   }
 
   function selectCoverPhoto(photoId) {
     setPhotos((current) => {
       const photo = current.find((item) => item.id === photoId);
       if (!photo) return current;
-      if (isCoverPhoto(photo) || coverCandidateId === photoId) {
-        setCoverCandidateId('');
-        return normalizePhotoCoverFlags(current, photoId);
-      }
-      setCoverCandidateId(photoId);
-      return normalizePhotoCoverFlags(current, '');
+      return normalizePhotoCoverFlags(current, photoId);
     });
   }
 
@@ -4965,7 +4950,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
       <EditHeader onBack={() => setIsDeleteModalOpen(true)} onDelete={deleteEntry} />
       <div className="upload-content edit-content" data-grid-rows={uploadGridRows}>
         <StaticUploadField>
-          <UploadGrid photos={photos} coverCandidateId={coverCandidateId} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
+          <UploadGrid photos={photos} onFiles={handleFiles} onRemovePhoto={removePhoto} onSelectCoverPhoto={selectCoverPhoto} />
         </StaticUploadField>
         <form
           className="entry-form"

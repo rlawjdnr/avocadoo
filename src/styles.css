@@ -924,12 +924,9 @@ body.splash-active .screen-stage {
   height: 116px;
   background: #ffffff;
   box-shadow: -1px 0 2px 1px rgba(0, 0, 0, 0.09);
-}
-
-.polaroid-cover-candidate .polaroid-paper {
-  box-shadow:
-    inset 0 0 0 2px #dadbe0,
-    -1px 0 2px 1px rgba(0, 0, 0, 0.09);
+  transition:
+    filter 0.12s cubic-bezier(0, 0, 0.2, 1),
+    box-shadow 0.12s cubic-bezier(0, 0, 0.2, 1);
 }
 
 .polaroid-cover-selected .polaroid-paper {
@@ -940,6 +937,18 @@ body.splash-active .screen-stage {
 
 .polaroid-add .polaroid-paper {
   box-shadow: -2px 3px 5px 1px rgba(0, 0, 0, 0.09);
+}
+
+.polaroid:has(.polaroid-cover-control:active) .polaroid-paper,
+.upload-add-control:active .polaroid-paper {
+  filter: brightness(0.96);
+  box-shadow: -1px 1px 3px 1px rgba(0, 0, 0, 0.14);
+}
+
+.polaroid-cover-selected:has(.polaroid-cover-control:active) .polaroid-paper {
+  box-shadow:
+    inset 0 0 0 2px #7acc2d,
+    -1px 1px 3px 1px rgba(0, 0, 0, 0.14);
 }
 
 .polaroid-left .polaroid-paper,
@@ -1054,7 +1063,6 @@ body.splash-active .screen-stage {
   display: block;
 }
 
-.polaroid-cover-candidate .polaroid-cover-badge,
 .polaroid-cover-selected .polaroid-cover-badge {
   display: inline-flex;
 }
