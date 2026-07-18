@@ -1029,14 +1029,17 @@ body.splash-active .screen-stage {
 .polaroid-cover-badge {
   position: absolute;
   z-index: 2;
-  left: -3px;
-  top: 4px;
+  left: 0;
+  top: 0;
   display: none;
   align-items: center;
   gap: 1px;
   height: 18px;
   padding: 2px 4px 3px;
-  border-radius: 0 0 2px 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 2px;
+  border-bottom-left-radius: 0;
   background: #dadbe0;
   color: #ffffff;
   font-size: 10px;
