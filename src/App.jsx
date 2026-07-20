@@ -2158,6 +2158,7 @@ function HomeSticker({
       height={stickerBaseSize}
       initialPosition={stickerPosition}
       scale={sticker.scale}
+      rotation={sticker.rotation}
       disabled={!canDragSticker}
       selected={selected}
       className={`${canDragSticker ? 'home-sticker-editable' : ''} ${shouldBounce ? 'home-sticker-bounced' : ''} ${hidden ? 'home-sticker-hidden-until-ready' : ''}`}
@@ -2834,6 +2835,7 @@ function Home({
   const pendingMonthTrackX = useRef(null);
   const longPressGesture = useRef(null);
   const stickerScreenGesture = useRef(null);
+  const stickerScreenPointerPoints = useRef(new Map());
   const homeSectionRef = useRef(null);
   const isStickerPickerOpenRef = useRef(false);
   const editingStickersRef = useRef([]);
@@ -2979,7 +2981,11 @@ function Home({
 
   useEffect(() => {
     isStickerPickerOpenRef.current = isStickerPickerOpen;
-    if (!isStickerPickerOpen) return;
+    if (!isStickerPickerOpen) {
+      stickerScreenPointerPoints.current.clear();
+      stickerScreenGesture.current = null;
+      return;
+    }
 
     dragBlockedClick.current = false;
     cancelScheduledMonthTrackPosition();
@@ -3347,20 +3353,53 @@ function Home({
     return Array.from(touches).map((touch) => ({ x: touch.clientX, y: touch.clientY }));
   }
 
+  function getStickerPointerPoints() {
+    return Array.from(stickerScreenPointerPoints.current.values());
+  }
+
+  function getSelectedStickerForGesture(touchedStickerId = '') {
+    const currentEditingStickers = editingStickersRef.current;
+    const currentSelectedStickerId = selectedStickerIdRef.current;
+    return currentEditingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || currentSelectedStickerId)) || currentEditingStickers[0];
+  }
+
+  function updateStickerFromGesturePoints(points) {
+    if (!stickerScreenGesture.current || points.length === 0) return;
+
+    const center = getGestureCenter(points);
+    const nextSticker = {
+      ...stickerScreenGesture.current.sticker,
+      x: stickerScreenGesture.current.sticker.x + center.x - stickerScreenGesture.current.center.x,
+      y: stickerScreenGesture.current.sticker.y + center.y - stickerScreenGesture.current.center.y,
+    };
+
+    if (points.length >= 2) {
+      const distance = getGestureDistance(points[0], points[1]);
+      const angle = getGestureAngle(points[0], points[1]);
+      nextSticker.scale = Math.min(
+        Math.max(stickerScreenGesture.current.sticker.scale * (distance / Math.max(stickerScreenGesture.current.distance, 1)), stickerScaleLimit.min),
+        stickerScaleLimit.max
+      );
+      nextSticker.rotation = stickerScreenGesture.current.sticker.rotation + angle - stickerScreenGesture.current.angle;
+    }
+
+    changeEditingSticker(nextSticker);
+  }
+
   function cancelPeelDragForMultiTouch() {
     document.dispatchEvent(new CustomEvent('avocadoo:sticker-multitouch'));
   }
 
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
+    if (stickerScreenPointerPoints.current.size > 0) return;
     if (event.touches.length < 2 && event.target.closest?.('.home-sticker-peelable')) return;
     if (event.touches.length < 2 && event.target.closest?.('button')) return;
 
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
     const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
-    const currentEditingStickers = editingStickersRef.current;
     const currentSelectedStickerId = selectedStickerIdRef.current;
-    const selectedSticker = currentEditingStickers.find((sticker) => sticker.id === (touchedStickerId || stickerScreenGesture.current?.sticker?.id || currentSelectedStickerId)) || currentEditingStickers[0];
+    const selectedSticker = getSelectedStickerForGesture(touchedStickerId);
     if (!selectedSticker) return;
 
     if (event.touches.length < 2) {
@@ -3396,15 +3435,15 @@ function Home({
 
   function updateStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
+    if (stickerScreenPointerPoints.current.size > 0) return;
     if (event.touches.length >= 2) cancelPeelDragForMultiTouch();
     if (!stickerScreenGesture.current) {
       if (event.touches.length < 2) return;
 
       const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
       const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
-      const currentEditingStickers = editingStickersRef.current;
       const currentSelectedStickerId = selectedStickerIdRef.current;
-      const selectedSticker = currentEditingStickers.find((sticker) => sticker.id === (touchedStickerId || currentSelectedStickerId)) || currentEditingStickers[0];
+      const selectedSticker = getSelectedStickerForGesture(touchedStickerId || currentSelectedStickerId);
       if (!selectedSticker) return;
       if (touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
         setSelectedStickerId(touchedStickerId);
@@ -3420,28 +3459,73 @@ function Home({
     event.stopPropagation();
     if (event.cancelable) event.preventDefault();
     const points = getStickerTouchPoints(event.touches);
-    const center = getGestureCenter(points);
-    const nextSticker = {
-      ...stickerScreenGesture.current.sticker,
-      x: stickerScreenGesture.current.sticker.x + center.x - stickerScreenGesture.current.center.x,
-      y: stickerScreenGesture.current.sticker.y + center.y - stickerScreenGesture.current.center.y,
-    };
+    updateStickerFromGesturePoints(points);
+  }
+
+  function startStickerPointerGesture(event) {
+    if (!isStickerPickerOpenRef.current || event.pointerType !== 'touch') return;
+    if (event.target.closest?.('button')) return;
+
+    const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
+    const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
+    const canStartFocusedGesture = Boolean(touchedStickerId || selectedStickerIdRef.current);
+    if (isSheetTouch) return;
+    if (!canStartFocusedGesture && stickerScreenPointerPoints.current.size === 0) return;
+
+    const selectedSticker = getSelectedStickerForGesture(touchedStickerId);
+    if (!selectedSticker) return;
+
+    stickerScreenPointerPoints.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = getStickerPointerPoints();
 
     if (points.length >= 2) {
-      const distance = getGestureDistance(points[0], points[1]);
-      const angle = getGestureAngle(points[0], points[1]);
-      nextSticker.scale = Math.min(
-        Math.max(stickerScreenGesture.current.sticker.scale * (distance / Math.max(stickerScreenGesture.current.distance, 1)), stickerScaleLimit.min),
-        stickerScaleLimit.max
-      );
-      nextSticker.rotation = stickerScreenGesture.current.sticker.rotation + angle - stickerScreenGesture.current.angle;
+      cancelPeelDragForMultiTouch();
+      event.stopPropagation();
+      if (event.cancelable) event.preventDefault();
     }
 
-    changeEditingSticker(nextSticker);
+    if (touchedStickerId && touchedStickerId !== selectedStickerIdRef.current) {
+      setSelectedStickerId(touchedStickerId);
+    }
+
+    stickerScreenGesture.current = {
+      ...createStickerScreenGesture(points, selectedSticker),
+      startedOnSticker: Boolean(touchedStickerId) || stickerScreenGesture.current?.startedOnSticker,
+      startedOnSheet: isSheetTouch,
+    };
+  }
+
+  function updateStickerPointerGesture(event) {
+    if (!isStickerPickerOpenRef.current || event.pointerType !== 'touch') return;
+    if (!stickerScreenPointerPoints.current.has(event.pointerId)) return;
+
+    stickerScreenPointerPoints.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = getStickerPointerPoints();
+    if (points.length < 2 || !stickerScreenGesture.current) return;
+
+    cancelPeelDragForMultiTouch();
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+    updateStickerFromGesturePoints(points);
+  }
+
+  function finishStickerPointerGesture(event) {
+    if (!stickerScreenPointerPoints.current.has(event.pointerId)) return;
+
+    stickerScreenPointerPoints.current.delete(event.pointerId);
+    const points = getStickerPointerPoints();
+    if (points.length < 2) {
+      stickerScreenGesture.current = null;
+      return;
+    }
+
+    const latestSticker = editingStickersRef.current.find((sticker) => sticker.id === stickerScreenGesture.current?.sticker.id) || stickerScreenGesture.current?.sticker;
+    if (latestSticker) stickerScreenGesture.current = createStickerScreenGesture(points, latestSticker);
   }
 
   function finishStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current || !stickerScreenGesture.current) return;
+    if (stickerScreenPointerPoints.current.size > 0) return;
 
     event.stopPropagation();
     if (event.touches.length < 2) {
@@ -3455,12 +3539,20 @@ function Home({
   }
 
   useEffect(() => {
+    document.addEventListener('pointerdown', startStickerPointerGesture, { capture: true, passive: false });
+    document.addEventListener('pointermove', updateStickerPointerGesture, { capture: true, passive: false });
+    document.addEventListener('pointerup', finishStickerPointerGesture, { capture: true, passive: false });
+    document.addEventListener('pointercancel', finishStickerPointerGesture, { capture: true, passive: false });
     document.addEventListener('touchstart', startStickerScreenGesture, { capture: true, passive: false });
     document.addEventListener('touchmove', updateStickerScreenGesture, { capture: true, passive: false });
     document.addEventListener('touchend', finishStickerScreenGesture, { capture: true, passive: false });
     document.addEventListener('touchcancel', finishStickerScreenGesture, { capture: true, passive: false });
 
     return () => {
+      document.removeEventListener('pointerdown', startStickerPointerGesture, true);
+      document.removeEventListener('pointermove', updateStickerPointerGesture, true);
+      document.removeEventListener('pointerup', finishStickerPointerGesture, true);
+      document.removeEventListener('pointercancel', finishStickerPointerGesture, true);
       document.removeEventListener('touchstart', startStickerScreenGesture, true);
       document.removeEventListener('touchmove', updateStickerScreenGesture, true);
       document.removeEventListener('touchend', finishStickerScreenGesture, true);

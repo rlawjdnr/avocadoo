@@ -3,7 +3,7 @@ export const stickerMotionConfig = {
   gridRows: 16,
   detachDistance: 86,
   detachTriggerDistance: 12,
-  visualPeelDistance: 18,
+  visualPeelDistance: 4,
   peelFeather: 0.16,
   curlAmount: 6,
   curlWidth: 0.1,

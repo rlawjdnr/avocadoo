@@ -73,6 +73,7 @@ export default function PeelableSticker({
   height = width,
   initialPosition,
   scale = 1,
+  rotation = 0,
   disabled = false,
   selected = false,
   debugMesh = false,
@@ -151,7 +152,7 @@ export default function PeelableSticker({
     };
     applyRootPosition(flatPositionRef.current);
     applyFlatMesh();
-  }, [initialPosition.x, initialPosition.y, previewPeel, scale]);
+  }, [initialPosition.x, initialPosition.y, previewPeel, rotation, scale]);
 
   useEffect(() => {
     if (!pixiReady || !settleFrom || settleStartedRef.current === settleFrom.key) return;
@@ -362,7 +363,7 @@ export default function PeelableSticker({
   function applyRootPosition(position) {
     const root = rootRef.current;
     if (!root) return;
-    root.style.transform = `translate3d(${position.x}px, ${position.y}px, 0)`;
+    root.style.transform = `translate3d(${position.x}px, ${position.y}px, 0) rotate(${rotation}deg)`;
   }
 
   function showPixiLayer() {
