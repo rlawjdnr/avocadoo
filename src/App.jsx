@@ -3349,7 +3349,7 @@ function Home({
 
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
-    if (event.target.closest?.('.home-sticker-peelable')) return;
+    if (event.touches.length < 2 && event.target.closest?.('.home-sticker-peelable')) return;
     if (event.touches.length < 2 && event.target.closest?.('button')) return;
 
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
