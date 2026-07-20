@@ -1,7 +1,9 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
+import PeelableSticker from './PeelableSticker';
+import { stickerMotionConfig } from './stickerMotionConfig';
 import {
   SWIPE_DIRECTION_THRESHOLD_PX,
   SWIPE_FLICK_MIN_DISTANCE_PX,
@@ -66,6 +68,11 @@ const assets = {
     sun: './assets/sticker-basic-sun.png?v=1',
     thunder: './assets/sticker-basic-thunder.png?v=1',
     umbrella: './assets/sticker-basic-umbrella.png?v=1',
+    foodBeer: './assets/sticker-food-beer.png?v=1',
+    foodCoffee: './assets/sticker-food-coffee.png?v=1',
+    foodHamburger: './assets/sticker-food-hamburger.png?v=1',
+    foodHotpot: './assets/sticker-food-hotpot.png?v=1',
+    foodSoju: './assets/sticker-food-soju.png?v=1',
   },
 };
 
@@ -323,36 +330,42 @@ const stickerScaleLimit = {
   max: 2.4,
 };
 const stickerOptions = [
-  { id: 'cloud', label: '구름', src: assets.stickers.cloud },
-  { id: 'cloud2', label: '연한 구름', src: assets.stickers.cloud2 },
-  { id: 'cloudy', label: '해구름', src: assets.stickers.cloudy },
-  { id: 'glowPurple', label: '보라 반짝', src: assets.stickers.glowPurple },
-  { id: 'glowGreen', label: '초록 반짝', src: assets.stickers.glowGreen },
-  { id: 'glowPink', label: '분홍 반짝', src: assets.stickers.glowPink },
-  { id: 'love', label: '빨간 하트', src: assets.stickers.love },
-  { id: 'loveCheck', label: '체크 하트', src: assets.stickers.loveCheck },
-  { id: 'loveDart', label: '화살 하트', src: assets.stickers.loveDart },
-  { id: 'moon', label: '달', src: assets.stickers.moon },
-  { id: 'orangeLove', label: '주황 하트', src: assets.stickers.orangeLove },
-  { id: 'pinkLoveLayered', label: '겹하트', src: assets.stickers.pinkLoveLayered },
-  { id: 'pinkLove', label: '분홍 하트', src: assets.stickers.pinkLove },
-  { id: 'purpleLove', label: '보라 하트', src: assets.stickers.purpleLove },
-  { id: 'rainbow', label: '무지개', src: assets.stickers.rainbow },
-  { id: 'rainy', label: '비구름', src: assets.stickers.rainy },
-  { id: 'shine', label: '반짝이', src: assets.stickers.shine },
-  { id: 'snow', label: '눈꽃', src: assets.stickers.snow },
-  { id: 'star', label: '별', src: assets.stickers.star },
-  { id: 'sun', label: '해', src: assets.stickers.sun },
-  { id: 'thunder', label: '천둥', src: assets.stickers.thunder },
-  { id: 'umbrella', label: '우산', src: assets.stickers.umbrella },
+  { id: 'cloud', label: '구름', src: assets.stickers.cloud, category: 'cloud' },
+  { id: 'cloud2', label: '연한 구름', src: assets.stickers.cloud2, category: 'cloud' },
+  { id: 'cloudy', label: '해구름', src: assets.stickers.cloudy, category: 'weather' },
+  { id: 'glowPurple', label: '보라 반짝', src: assets.stickers.glowPurple, category: 'sparkle' },
+  { id: 'glowGreen', label: '초록 반짝', src: assets.stickers.glowGreen, category: 'sparkle' },
+  { id: 'glowPink', label: '분홍 반짝', src: assets.stickers.glowPink, category: 'sparkle' },
+  { id: 'love', label: '빨간 하트', src: assets.stickers.love, category: 'heart' },
+  { id: 'loveCheck', label: '체크 하트', src: assets.stickers.loveCheck, category: 'heart' },
+  { id: 'loveDart', label: '화살 하트', src: assets.stickers.loveDart, category: 'heart' },
+  { id: 'moon', label: '달', src: assets.stickers.moon, category: 'weather' },
+  { id: 'orangeLove', label: '주황 하트', src: assets.stickers.orangeLove, category: 'heart' },
+  { id: 'pinkLoveLayered', label: '겹하트', src: assets.stickers.pinkLoveLayered, category: 'heart' },
+  { id: 'pinkLove', label: '분홍 하트', src: assets.stickers.pinkLove, category: 'heart' },
+  { id: 'purpleLove', label: '보라 하트', src: assets.stickers.purpleLove, category: 'heart' },
+  { id: 'rainbow', label: '무지개', src: assets.stickers.rainbow, category: 'weather' },
+  { id: 'rainy', label: '비구름', src: assets.stickers.rainy, category: 'weather' },
+  { id: 'shine', label: '반짝이', src: assets.stickers.shine, category: 'sparkle' },
+  { id: 'snow', label: '눈꽃', src: assets.stickers.snow, category: 'weather' },
+  { id: 'star', label: '별', src: assets.stickers.star, category: 'sparkle' },
+  { id: 'sun', label: '해', src: assets.stickers.sun, category: 'weather' },
+  { id: 'thunder', label: '천둥', src: assets.stickers.thunder, category: 'weather' },
+  { id: 'umbrella', label: '우산', src: assets.stickers.umbrella, category: 'weather' },
+  { id: 'foodBeer', label: '맥주', src: assets.stickers.foodBeer, category: 'food' },
+  { id: 'foodCoffee', label: '커피', src: assets.stickers.foodCoffee, category: 'food' },
+  { id: 'foodHamburger', label: '햄버거', src: assets.stickers.foodHamburger, category: 'food' },
+  { id: 'foodHotpot', label: '훠궈', src: assets.stickers.foodHotpot, category: 'food' },
+  { id: 'foodSoju', label: '소주', src: assets.stickers.foodSoju, category: 'food' },
 ];
 const stickerOptionIds = new Set(stickerOptions.map((option) => option.id));
 const stickerTabs = [
-  { id: 'all', label: 'ALL', icon: 'all' },
-  { id: 'face', label: '날씨', src: assets.stickers.cloudy },
-  { id: 'gift', label: '반짝', src: assets.stickers.star },
+  { id: 'all', label: '전체', icon: 'all' },
+  { id: 'weather', label: '날씨', src: assets.stickers.cloudy },
+  { id: 'sparkle', label: '반짝', src: assets.stickers.star },
   { id: 'heart', label: '하트', src: assets.stickers.pinkLove },
   { id: 'cloud', label: '구름', src: assets.stickers.cloud },
+  { id: 'food', label: '음식', src: assets.stickers.foodHamburger },
 ];
 const defaultStickerPosition = {
   xRatio: 0.58,
@@ -1394,7 +1407,7 @@ function getMonthDateRange(monthStart) {
 
 function normalizeSticker(sticker, fallbackId = '') {
   const option = stickerOptions.find((item) => item.id === sticker?.type) || stickerOptions[1];
-  return {
+  const normalized = {
     id: sticker?.id || fallbackId || crypto.randomUUID(),
     type: option.id,
     x: Number.isFinite(sticker?.x) ? sticker.x : 226,
@@ -1406,6 +1419,8 @@ function normalizeSticker(sticker, fallbackId = '') {
     createdBy: sticker?.createdBy || sticker?.created_by || '',
     createdByNickname: sticker?.createdByNickname || sticker?.created_by_nickname || '',
   };
+  if (sticker?.settleFrom) normalized.settleFrom = sticker.settleFrom;
+  return normalized;
 }
 
 function toMonthContentSticker(sticker) {
@@ -2117,42 +2132,54 @@ function NotificationInboxScreen({ active = true, notifications = [], transition
   );
 }
 
-function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 0, bounceIndex = -1, bounceCount = 0, onChange, onRemove, onSelect }) {
+function HomeSticker({
+  sticker,
+  editable = false,
+  selected = false,
+  bounceKey = 0,
+  bounceIndex = -1,
+  bounceCount = 0,
+  onChange,
+  getDropResult,
+  onRemove,
+  onSelect,
+  onReady,
+  hidden = false,
+}) {
   const shouldBounce = !editable && bounceKey > 0 && bounceIndex >= 0;
-  const bounceDelay = shouldBounce && bounceCount > 1 ? bounceIndex * 0.05 : 0;
+  const stickerPosition = { x: sticker.x, y: sticker.y };
+  const canDragSticker = editable;
 
   return (
-    <motion.div
-      className={`home-sticker ${editable ? 'home-sticker-editable' : ''} ${selected ? 'home-sticker-selected' : ''}`}
-      data-sticker-id={sticker.id}
-      style={{
-        left: sticker.x,
-        top: sticker.y,
-        width: stickerBaseSize,
-        height: stickerBaseSize,
-        scale: sticker.scale,
-        rotate: sticker.rotation,
+    <PeelableSticker
+      id={sticker.id}
+      src={getStickerSrc(sticker.type)}
+      width={stickerBaseSize}
+      height={stickerBaseSize}
+      initialPosition={stickerPosition}
+      scale={sticker.scale}
+      disabled={!canDragSticker}
+      selected={selected}
+      className={`${canDragSticker ? 'home-sticker-editable' : ''} ${shouldBounce ? 'home-sticker-bounced' : ''} ${hidden ? 'home-sticker-hidden-until-ready' : ''}`}
+      settleFrom={sticker.settleFrom}
+      getDropResult={getDropResult}
+      onReady={onReady}
+      onDragStart={() => onSelect?.(sticker.id)}
+      onDrop={(id, result) => {
+        if (!result.accepted) return;
+        onChange?.({
+          ...sticker,
+          x: result.position.x,
+          y: result.position.y,
+        });
       }}
-      initial={false}
-      animate={{ opacity: 1 }}
     >
-      <motion.img
-        key={`${sticker.id}-${shouldBounce ? bounceKey : 'stable'}`}
-        className="home-sticker-image"
-        src={getStickerSrc(sticker.type)}
-        alt=""
-        initial={shouldBounce ? { scale: 0.9 } : false}
-        animate={shouldBounce ? { scale: [0.9, 1.1, 0.98, 1] } : { scale: 1 }}
-        transition={shouldBounce ? { duration: 0.34, delay: bounceDelay, ease: [0.2, 0.8, 0.2, 1] } : { duration: 0 }}
-      />
       {editable && selected ? (
+        // Keep the delete control visually fixed; the old transform: `scale(${1 / Math.max(sticker.scale || 1, 0.01)})` made it grow on small stickers.
         <button
           className="home-sticker-remove"
           type="button"
           aria-label="스티커 삭제"
-          style={{
-            transform: `scale(${1 / Math.max(sticker.scale || 1, 0.01)})`,
-          }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -2162,9 +2189,26 @@ function HomeSticker({ sticker, editable = false, selected = false, bounceKey = 
           <img src={assets.stickerDelete} alt="" />
         </button>
       ) : null}
-    </motion.div>
+    </PeelableSticker>
   );
 }
+
+const MemoizedHomeSticker = memo(HomeSticker, (previous, next) => (
+  previous.editable === next.editable &&
+  previous.selected === next.selected &&
+  previous.bounceKey === next.bounceKey &&
+  previous.bounceIndex === next.bounceIndex &&
+  previous.bounceCount === next.bounceCount &&
+  previous.hidden === next.hidden &&
+  previous.sticker.id === next.sticker.id &&
+  previous.sticker.type === next.sticker.type &&
+  previous.sticker.x === next.sticker.x &&
+  previous.sticker.y === next.sticker.y &&
+  previous.sticker.scale === next.sticker.scale &&
+  previous.sticker.rotation === next.sticker.rotation &&
+  previous.sticker.settleFrom === next.sticker.settleFrom &&
+  previous.onReady === next.onReady
+));
 
 function HomeStickerLayer({
   stickers = [],
@@ -2176,16 +2220,13 @@ function HomeStickerLayer({
   onStickerChange,
   onStickerRemove,
   onStickerSelect,
+  onStickerReady,
+  hiddenStickerId = '',
 }) {
+  const layerRef = useRef(null);
   const activePointers = useRef(new Map());
   const gesture = useRef(null);
   const visibleStickers = editing ? editStickers : stickers;
-  const renderedStickers = editing && selectedStickerId
-    ? [
-      ...visibleStickers.filter((sticker) => sticker.id !== selectedStickerId),
-      ...visibleStickers.filter((sticker) => sticker.id === selectedStickerId),
-    ]
-    : visibleStickers;
   const selectedSticker = editStickers.find((sticker) => sticker.id === selectedStickerId);
   const bounceStickerIndexes = useMemo(() => new Map(bounceStickerIds.map((id, index) => [id, index])), [bounceStickerIds]);
 
@@ -2283,8 +2324,41 @@ function HomeStickerLayer({
     if (latestSticker) gesture.current = createLayerGesture(points, latestSticker);
   }
 
+  function getStickerDropResult({ position, size, pointer }) {
+    const layer = layerRef.current;
+    if (!layer) {
+      return { accepted: false, position };
+    }
+
+    const layerRect = layer.getBoundingClientRect();
+    const sheetRect = document.querySelector('.sticker-picker-sheet')?.getBoundingClientRect();
+    const isOnSheet = sheetRect
+      ? pointer.x >= sheetRect.left && pointer.x <= sheetRect.right && pointer.y >= sheetRect.top && pointer.y <= sheetRect.bottom
+      : false;
+    const isInsideLayer = (
+      pointer.x >= layerRect.left &&
+      pointer.x <= layerRect.right &&
+      pointer.y >= layerRect.top &&
+      pointer.y <= layerRect.bottom
+    );
+
+    if (!isInsideLayer || isOnSheet) {
+      return { accepted: false, position };
+    }
+
+    return {
+      accepted: true,
+      targetId: 'home-month-content',
+      position: {
+        x: Math.min(Math.max(position.x, 8), Math.max(8, layerRect.width - size.width - 8)),
+        y: Math.min(Math.max(position.y, 8), Math.max(8, layerRect.height - size.height - 8)),
+      },
+    };
+  }
+
   return (
     <div
+      ref={layerRef}
       className={`home-sticker-layer ${editing ? 'home-sticker-layer-editing' : ''}`}
       aria-hidden={visibleStickers.length === 0}
       onPointerDown={startLayerGesture}
@@ -2295,8 +2369,8 @@ function HomeStickerLayer({
         if (activePointers.current.size === 0) resetLayerGesture();
       }}
     >
-      {renderedStickers.map((sticker) => (
-        <HomeSticker
+      {visibleStickers.map((sticker) => (
+        <MemoizedHomeSticker
           key={sticker.id}
           sticker={toMonthContentSticker(sticker)}
           editable={editing}
@@ -2305,8 +2379,11 @@ function HomeStickerLayer({
           bounceIndex={bounceStickerIndexes.has(sticker.id) ? bounceStickerIndexes.get(sticker.id) : -1}
           bounceCount={bounceStickerIds.length}
           onChange={onStickerChange}
+          getDropResult={getStickerDropResult}
           onRemove={() => onStickerRemove?.(sticker.id)}
           onSelect={onStickerSelect}
+          onReady={onStickerReady}
+          hidden={sticker.id === hiddenStickerId}
         />
       ))}
     </div>
@@ -2328,6 +2405,8 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
     onStickerChange,
     onStickerRemove,
     onStickerSelect,
+    onStickerReady,
+    hiddenStickerId = '',
   } = arguments[0] || {};
 
   useLayoutEffect(() => {
@@ -2358,6 +2437,8 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
               onStickerChange={onStickerChange}
               onStickerRemove={onStickerRemove}
               onStickerSelect={onStickerSelect}
+              onStickerReady={onStickerReady}
+              hiddenStickerId={hiddenStickerId}
             />
             {weeks.map((week) => {
               const hasDiary = week.photos.length > 0;
@@ -2400,25 +2481,105 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
   );
 }
 
-function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss }) {
+function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss, readyStickerId = '' }) {
   const [activeTab, setActiveTab] = useState('all');
   const [dragSticker, setDragSticker] = useState(null);
   const dragGesture = useRef(null);
   const blockNextClick = useRef(false);
-  const visibleStickerOptions = activeTab === 'all' ? stickerOptions : [];
+  const dragPreviewAnimationRef = useRef(null);
+  const dragGlobalCleanup = useRef(null);
+  const activeStickerTab = stickerTabs.find((tab) => tab.id === activeTab) || stickerTabs[0];
+  const visibleStickerOptions = activeTab === 'all'
+    ? stickerOptions
+    : stickerOptions.filter((option) => option.category === activeTab);
+
+  useEffect(() => () => {
+    dragPreviewAnimationRef.current?.stop?.();
+    dragGlobalCleanup.current?.();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!readyStickerId) return;
+    setDragSticker((current) => (
+      current?.waitingForStickerId === readyStickerId ? null : current
+    ));
+  }, [readyStickerId]);
+
+  function stopDragPreviewAnimation() {
+    dragPreviewAnimationRef.current?.stop?.();
+    dragPreviewAnimationRef.current = null;
+  }
+
+  function bindStickerDragWindowEvents() {
+    dragGlobalCleanup.current?.();
+    window.addEventListener('pointermove', moveStickerOptionDrag, { capture: true, passive: false });
+    window.addEventListener('pointerup', finishStickerOptionDrag, { capture: true, passive: false });
+    window.addEventListener('pointercancel', finishStickerOptionDrag, { capture: true, passive: false });
+    dragGlobalCleanup.current = () => {
+      window.removeEventListener('pointermove', moveStickerOptionDrag, true);
+      window.removeEventListener('pointerup', finishStickerOptionDrag, true);
+      window.removeEventListener('pointercancel', finishStickerOptionDrag, true);
+      dragGlobalCleanup.current = null;
+    };
+  }
+
+  function startDragPreviewAnimation(gesture) {
+    stopDragPreviewAnimation();
+    gesture.peelStartedAt = performance.now();
+
+    dragPreviewAnimationRef.current = animate(0, 1, {
+      type: 'spring',
+      stiffness: 480,
+      damping: 50,
+      restDelta: 0.001,
+      restSpeed: 0.001,
+      onUpdate: (value) => {
+        if (dragGesture.current !== gesture || !gesture.moved) return;
+        const peelProgress = Math.min(Math.max(value, 0), 1);
+        const pointerDelta = {
+          x: 0,
+          y: -stickerMotionConfig.visualPeelDistance * peelProgress,
+        };
+        gesture.peelProgress = peelProgress;
+        gesture.pointerDelta = pointerDelta;
+        setDragSticker((current) => current && current.type === gesture.type ? {
+          ...current,
+          peelProgress,
+          pointerDelta,
+        } : current);
+      },
+    });
+  }
 
   function startStickerOptionDrag(event, option) {
-    if (event.pointerType !== 'mouse') return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
+    stopDragPreviewAnimation();
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragGesture.current = {
       pointerId: event.pointerId,
       type: option.id,
       startX: event.clientX,
       startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
+      captureTarget: event.currentTarget,
       moved: false,
+      peelProgress: 0,
+      pointerDelta: { x: 0, y: 0 },
+      peelStartedAt: 0,
     };
+    bindStickerDragWindowEvents();
+    setDragSticker({
+      type: option.id,
+      x: event.clientX,
+      y: event.clientY,
+      isVisible: false,
+      peelProgress: 0,
+      pointerDelta: { x: 0, y: 0 },
+    });
   }
 
   function moveStickerOptionDrag(event) {
@@ -2431,25 +2592,54 @@ function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss })
 
     gesture.moved = true;
     if (event.cancelable) event.preventDefault();
-    setDragSticker({
-      type: gesture.type,
+    gesture.currentX = event.clientX;
+    gesture.currentY = event.clientY;
+    if (!gesture.peelStartedAt) startDragPreviewAnimation(gesture);
+    setDragSticker((current) => current && current.type === gesture.type ? {
+      ...current,
       x: event.clientX,
       y: event.clientY,
-    });
+      isVisible: true,
+    } : current);
   }
 
   function finishStickerOptionDrag(event, cancelled = false) {
     const gesture = dragGesture.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
 
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    event.stopPropagation();
+    if (event.cancelable) event.preventDefault();
+    gesture.captureTarget?.releasePointerCapture?.(event.pointerId);
+    stopDragPreviewAnimation();
+    dragGlobalCleanup.current?.();
     dragGesture.current = null;
-    setDragSticker(null);
 
-    if (!cancelled && gesture.moved) {
+    if (cancelled || !gesture.moved) {
+      setDragSticker(null);
+    } else {
       if (event.cancelable) event.preventDefault();
       blockNextClick.current = true;
-      onDropSticker?.(gesture.type, { x: event.clientX, y: event.clientY });
+      const dropPoint = {
+        x: event.clientX,
+        y: event.clientY - stickerMotionConfig.pointerLiftOffset,
+      };
+      const dropResult = onDropSticker?.(gesture.type, dropPoint, {
+        start: { x: gesture.startX, y: gesture.startY },
+        end: dropPoint,
+        peelCorner: 'bottom-edge',
+        peelProgress: 1,
+        pointerDelta: gesture.pointerDelta || { x: 0, y: -stickerMotionConfig.visualPeelDistance },
+      });
+
+      if (dropResult?.accepted && dropResult.stickerId) {
+        setDragSticker((current) => current && current.type === gesture.type ? {
+          ...current,
+          waitingForStickerId: dropResult.stickerId,
+        } : current);
+      } else {
+        setDragSticker(null);
+      }
+
       window.setTimeout(() => {
         blockNextClick.current = false;
       }, 120);
@@ -2490,8 +2680,7 @@ function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss })
         </div>
         <div className="sticker-options">
           <div className="sticker-picker-title">
-            <strong>전체</strong>
-            <span>All</span>
+            <strong>{activeStickerTab.label}</strong>
           </div>
           {visibleStickerOptions.map((option) => (
             <button
@@ -2503,12 +2692,13 @@ function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss })
               onPointerMove={moveStickerOptionDrag}
               onPointerUp={finishStickerOptionDrag}
               onPointerCancel={(event) => finishStickerOptionDrag(event, true)}
+              onDragStart={(event) => event.preventDefault()}
               onClick={() => {
                 if (blockNextClick.current) return;
                 onAddSticker(option.id);
               }}
             >
-              <img src={option.src} alt="" />
+              <img src={option.src} alt="" draggable={false} />
             </button>
           ))}
           {visibleStickerOptions.length === 0 ? (
@@ -2523,13 +2713,29 @@ function StickerPickerSheet({ onAddSticker, onDropSticker, onApply, onDismiss })
       </motion.section>
       {dragSticker ? (
         <div
-          className="sticker-drag-preview"
+          className={`sticker-drag-preview ${dragSticker.isVisible ? '' : 'sticker-drag-preview-peel-hidden'}`}
           style={{
-            left: dragSticker.x,
-            top: dragSticker.y,
+            left: 0,
+            top: 0,
+            transform: `translate3d(${dragSticker.x}px, ${dragSticker.isVisible ? dragSticker.y - stickerMotionConfig.pointerLiftOffset : dragSticker.y}px, 0) translate(-50%, -50%)`,
           }}
+          aria-hidden="true"
         >
-          <img src={getStickerSrc(dragSticker.type)} alt="" />
+          <PeelableSticker
+            id={`picker-preview-${dragSticker.type}`}
+            src={getStickerSrc(dragSticker.type)}
+            width={stickerBaseSize}
+            height={stickerBaseSize}
+            initialPosition={{ x: 0, y: 0 }}
+            scale={1}
+            disabled
+            className="sticker-drag-preview-peelable"
+            previewPeel={{
+              peelCorner: 'bottom-edge',
+              peelProgress: dragSticker.peelProgress,
+              pointerDelta: dragSticker.pointerDelta,
+            }}
+          />
         </div>
       ) : null}
     </div>
@@ -2637,6 +2843,8 @@ function Home({
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [editingStickers, setEditingStickers] = useState([]);
   const [selectedStickerId, setSelectedStickerId] = useState('');
+  const [readyStickerId, setReadyStickerId] = useState('');
+  const [pendingDropStickerId, setPendingDropStickerId] = useState('');
   const [stickerBounce, setStickerBounce] = useState({ key: 0, ids: [] });
   const [weeklySummariesByMonth, setWeeklySummariesByMonth] = useState(readWeeklySummaryCache);
   const [loadingSummaryMonthKeys, setLoadingSummaryMonthKeys] = useState(() => new Set());
@@ -2794,11 +3002,18 @@ function Home({
       if (missingSourceStickers.length === 0 && currentWithoutSeed.length === current.length) return current;
 
       seededDefaultStickerId.current = '';
-      const nextStickers = [...missingSourceStickers, ...currentWithoutSeed];
-      if (!selectedStickerId) setSelectedStickerId(nextStickers[0]?.id || '');
-      return nextStickers;
+      return [...missingSourceStickers, ...currentWithoutSeed];
     });
   }, [activeMonthKey, isStickerPickerOpen, stickersByMonth]);
+
+  useEffect(() => {
+    if (!isStickerPickerOpen) return;
+    if (selectedStickerId && editingStickers.some((sticker) => sticker.id === selectedStickerId)) return;
+
+    const nextSelectedStickerId = editingStickers[0]?.id || '';
+    selectedStickerIdRef.current = nextSelectedStickerId;
+    setSelectedStickerId(nextSelectedStickerId);
+  }, [editingStickers, isStickerPickerOpen, selectedStickerId]);
 
   function getMonthPageWidth(viewport) {
     return viewport?.clientWidth || screenPushDistance;
@@ -2859,6 +3074,18 @@ function Home({
       startX: event.clientX,
       startY: event.clientY,
       timerId: window.setTimeout(() => {
+        const gesture = longPressGesture.current;
+        if (gesture) {
+          const viewport = monthViewportRef.current;
+          if (viewport?.hasPointerCapture?.(gesture.pointerId)) {
+            viewport.releasePointerCapture?.(gesture.pointerId);
+          }
+          monthSwipeGesture.onPointerCancel({
+            pointerId: gesture.pointerId,
+            clientX: gesture.startX,
+            clientY: gesture.startY,
+          });
+        }
         dragBlockedClick.current = true;
         openStickerPicker();
         longPressGesture.current = null;
@@ -3045,13 +3272,15 @@ function Home({
   }
 
   function finishMonthPointer(event, cancelled = false) {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId) && event.currentTarget.releasePointerCapture) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
     if (isStickerPickerOpenRef.current) {
       dragBlockedClick.current = false;
       clearHomeLongPress();
+      monthSwipeGesture.onPointerCancel(event);
       return;
-    }
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId) && event.currentTarget.releasePointerCapture) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
     }
     clearHomeLongPress();
 
@@ -3081,6 +3310,11 @@ function Home({
     if (!isStickerPickerOpenRef.current) return;
     if (event.target.closest?.('.sticker-picker-sheet, .home-sticker-editable')) return;
     event.stopPropagation();
+  }
+
+  function preventHomeContextMenu(event) {
+    if (!event.target.closest?.('.home-month-viewport, .home-sticker')) return;
+    event.preventDefault();
   }
 
   function getGestureCenter(points) {
@@ -3115,6 +3349,7 @@ function Home({
 
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
+    if (event.target.closest?.('.home-sticker-peelable')) return;
     if (event.touches.length < 2 && event.target.closest?.('button')) return;
 
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
@@ -3255,39 +3490,61 @@ function Home({
     setSelectedStickerId(placedStickerId);
   }
 
-  function dropEditingSticker(type, point) {
+  function dropEditingSticker(type, point, dragMeta = null) {
     seededDefaultStickerId.current = '';
     const viewport = monthViewportRef.current;
     const weekListMetrics = getActiveWeekListMetrics();
-    if (!viewport || !weekListMetrics) return;
+    if (!viewport || !weekListMetrics) return { accepted: false };
 
     const viewportRect = viewport.getBoundingClientRect();
     const { rect: weekListRect, scrollTop } = weekListMetrics;
-    if (
-      point.x < viewportRect.left ||
-      point.x > viewportRect.right ||
-      point.y < weekListRect.top ||
-      point.y > weekListRect.bottom
-    ) {
-      return;
-    }
-
     const sheet = document.querySelector('.sticker-picker-sheet');
     const sheetRect = sheet?.getBoundingClientRect();
-    if (sheetRect && point.y >= sheetRect.top) return;
+    if (sheetRect && point.y >= sheetRect.top) return { accepted: false };
+    if (point.x < viewportRect.left || point.x > viewportRect.right || point.y < weekListRect.top) return { accepted: false };
 
+    const placedScale = defaultStickerPosition.scale;
+    const placedSize = stickerBaseSize * placedScale;
+    const visibleDropBottom = Math.min(weekListRect.bottom, sheetRect?.top ?? viewportRect.bottom, viewportRect.bottom);
+    const clampedPointY = Math.min(Math.max(point.y, weekListRect.top), visibleDropBottom);
+    const dropTopLeftX = point.x - weekListRect.left - placedSize / 2;
+    const dropTopLeftY = scrollTop + clampedPointY - weekListRect.top - placedSize / 2;
+    const targetX = Math.min(Math.max(dropTopLeftX, 8), weekListRect.width - placedSize - 8);
+    // The previous unscaled expression was `y: scrollTop + Math.min(Math.max(point.y - weekListRect.top - stickerBaseSize / 2, 8), weekListRect.height - stickerBaseSize - 8)`.
+    const targetY = scrollTop + Math.min(Math.max(clampedPointY - weekListRect.top - placedSize / 2, 8), weekListRect.height - placedSize - 8);
     const nextSticker = normalizeSticker({
       id: crypto.randomUUID(),
       type,
-      x: Math.min(Math.max(point.x - viewportRect.left - stickerBaseSize / 2, 8), viewportRect.width - stickerBaseSize - 8),
-      y: scrollTop + Math.min(Math.max(point.y - weekListRect.top - stickerBaseSize / 2, 8), weekListRect.height - stickerBaseSize - 8),
+      x: targetX,
+      y: targetY,
       coordinateSpace: 'month-content',
-      scale: defaultStickerPosition.scale,
+      scale: placedScale,
       rotation: defaultStickerPosition.rotation,
+      settleFrom: dragMeta ? {
+        key: `${type}-${Date.now()}`,
+        peelCorner: dragMeta.peelCorner,
+        peelProgress: Number.isFinite(dragMeta.peelProgress) ? dragMeta.peelProgress : 0,
+        pointerDelta: dragMeta.pointerDelta,
+        rootOffset: {
+          x: dropTopLeftX - targetX,
+          y: dropTopLeftY - targetY,
+        },
+        duration: stickerMotionConfig.dropDuration,
+      } : null,
     });
     setEditingStickers((current) => [...current, nextSticker]);
     selectedStickerIdRef.current = nextSticker.id;
     setSelectedStickerId(nextSticker.id);
+    setPendingDropStickerId(nextSticker.id);
+    setReadyStickerId('');
+    return { accepted: true, stickerId: nextSticker.id };
+  }
+
+  function handleStickerReady(stickerId) {
+    if (stickerId === pendingDropStickerId) {
+      setPendingDropStickerId('');
+    }
+    setReadyStickerId(stickerId);
   }
 
   function changeEditingSticker(nextSticker) {
@@ -3297,16 +3554,22 @@ function Home({
 
   function removeEditingSticker(stickerId) {
     if (stickerId === seededDefaultStickerId.current) seededDefaultStickerId.current = '';
-    setEditingStickers((current) => {
-      const nextStickers = current.filter((sticker) => sticker.id !== stickerId);
-      if (selectedStickerId === stickerId) setSelectedStickerId(nextStickers[0]?.id || '');
-      return nextStickers;
-    });
+    if (stickerId === pendingDropStickerId) setPendingDropStickerId('');
+    const nextStickers = editingStickers.filter((sticker) => sticker.id !== stickerId);
+    setEditingStickers(nextStickers);
+
+    if (selectedStickerIdRef.current === stickerId) {
+      const nextSelectedStickerId = nextStickers[0]?.id || '';
+      selectedStickerIdRef.current = nextSelectedStickerId;
+      setSelectedStickerId(nextSelectedStickerId);
+    }
   }
 
   function dismissStickerPicker() {
     resetStickerScreenGesture();
     seededDefaultStickerId.current = '';
+    setReadyStickerId('');
+    setPendingDropStickerId('');
     setIsStickerPickerOpen(false);
     setEditingStickers([]);
     setSelectedStickerId('');
@@ -3317,7 +3580,7 @@ function Home({
     const previousStickersById = new Map(previousStickers.map((sticker) => [sticker.id, sticker]));
     const createdAt = new Date().toISOString();
     const nextStickers = editingStickers.map((sticker) => {
-      const nextSticker = toMonthContentSticker(sticker);
+      const { settleFrom, ...nextSticker } = toMonthContentSticker(sticker);
       const previousSticker = previousStickersById.get(nextSticker.id);
       if (previousSticker) return nextSticker;
 
@@ -3360,6 +3623,7 @@ function Home({
       className="phone home-screen"
       onPointerDownCapture={blockHomeTouchWhilePicking}
       onClickCapture={blockHomeTouchWhilePicking}
+      onContextMenu={preventHomeContextMenu}
       {...homeMotionProps}
       style={homeMotionStyle}
     >
@@ -3402,6 +3666,8 @@ function Home({
               onStickerChange={changeEditingSticker}
               onStickerRemove={removeEditingSticker}
               onStickerSelect={setSelectedStickerId}
+              onStickerReady={handleStickerReady}
+              hiddenStickerId={index === activeMonthIndex ? pendingDropStickerId : ''}
               onSelectWeek={handleSelectWeek}
             />
           ))}
@@ -3421,6 +3687,7 @@ function Home({
             onDropSticker={dropEditingSticker}
             onApply={applySticker}
             onDismiss={dismissStickerPicker}
+            readyStickerId={readyStickerId}
           />
         ) : null}
       </AnimatePresence>
