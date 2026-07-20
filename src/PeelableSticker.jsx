@@ -121,6 +121,11 @@ export default function PeelableSticker({
   }, [onReady]);
 
   useEffect(() => {
+    document.addEventListener('avocadoo:sticker-multitouch', cancelActivePointerDrag);
+    return () => document.removeEventListener('avocadoo:sticker-multitouch', cancelActivePointerDrag);
+  }, []);
+
+  useEffect(() => {
     if (previewPeel || settleFrom) setPixiActive(true);
   }, [previewPeel, settleFrom]);
 
@@ -620,8 +625,8 @@ export default function PeelableSticker({
     onDragStart?.(id);
   }
 
-  function cancelPointerDragForMultiTouch(event) {
-    if (!dragRef.current || event.touches?.length < 2) return;
+  function cancelActivePointerDrag() {
+    if (!dragRef.current) return;
 
     const drag = dragRef.current;
     const currentRootOffset = meshStateRef.current?.rootOffset || drag.rootOffset || { x: 0, y: 0 };
@@ -643,6 +648,11 @@ export default function PeelableSticker({
       targetId: 'home-month-content',
       accepted: true,
     });
+  }
+
+  function cancelPointerDragForMultiTouch(event) {
+    if (event.touches?.length < 2) return;
+    cancelActivePointerDrag();
   }
 
   function movePointerDrag(event) {

@@ -3347,6 +3347,10 @@ function Home({
     return Array.from(touches).map((touch) => ({ x: touch.clientX, y: touch.clientY }));
   }
 
+  function cancelPeelDragForMultiTouch() {
+    document.dispatchEvent(new CustomEvent('avocadoo:sticker-multitouch'));
+  }
+
   function startStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
     if (event.touches.length < 2 && event.target.closest?.('.home-sticker-peelable')) return;
@@ -3376,6 +3380,7 @@ function Home({
       return;
     }
 
+    cancelPeelDragForMultiTouch();
     if (touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
       setSelectedStickerId(touchedStickerId);
     }
@@ -3391,6 +3396,7 @@ function Home({
 
   function updateStickerScreenGesture(event) {
     if (!isStickerPickerOpenRef.current) return;
+    if (event.touches.length >= 2) cancelPeelDragForMultiTouch();
     if (!stickerScreenGesture.current) {
       if (event.touches.length < 2) return;
 
