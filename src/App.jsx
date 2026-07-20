@@ -3390,7 +3390,25 @@ function Home({
   }
 
   function updateStickerScreenGesture(event) {
-    if (!isStickerPickerOpenRef.current || !stickerScreenGesture.current) return;
+    if (!isStickerPickerOpenRef.current) return;
+    if (!stickerScreenGesture.current) {
+      if (event.touches.length < 2) return;
+
+      const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
+      const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
+      const currentEditingStickers = editingStickersRef.current;
+      const currentSelectedStickerId = selectedStickerIdRef.current;
+      const selectedSticker = currentEditingStickers.find((sticker) => sticker.id === (touchedStickerId || currentSelectedStickerId)) || currentEditingStickers[0];
+      if (!selectedSticker) return;
+      if (touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
+        setSelectedStickerId(touchedStickerId);
+      }
+      stickerScreenGesture.current = {
+        ...createStickerScreenGesture(getStickerTouchPoints(event.touches), selectedSticker),
+        startedOnSticker: Boolean(touchedStickerId),
+        startedOnSheet: isSheetTouch,
+      };
+    }
     if (event.touches.length < 2 && !stickerScreenGesture.current.startedOnSticker) return;
 
     event.stopPropagation();

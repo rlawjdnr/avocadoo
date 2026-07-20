@@ -585,6 +585,7 @@ export default function PeelableSticker({
   function startPointerDrag(event) {
     if (disabled || event.target.closest?.('button')) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (dragRef.current) return;
 
     event.stopPropagation();
     if (event.cancelable) event.preventDefault();
@@ -617,6 +618,31 @@ export default function PeelableSticker({
       lastDropPosition: { x: initialPosition.x, y: initialPosition.y },
     };
     onDragStart?.(id);
+  }
+
+  function cancelPointerDragForMultiTouch(event) {
+    if (!dragRef.current || event.touches?.length < 2) return;
+
+    const drag = dragRef.current;
+    const currentRootOffset = meshStateRef.current?.rootOffset || drag.rootOffset || { x: 0, y: 0 };
+    const currentPosition = {
+      x: flatPositionRef.current.x + canvasPadding + currentRootOffset.x,
+      y: flatPositionRef.current.y + canvasPadding + currentRootOffset.y,
+    };
+    rootRef.current?.releasePointerCapture?.(drag.pointerId);
+    dragRef.current = null;
+    attachRef.current = null;
+    flatPositionRef.current = {
+      x: currentPosition.x - canvasPadding,
+      y: currentPosition.y - canvasPadding,
+    };
+    if (meshStateRef.current) meshStateRef.current.rootOffset = { x: 0, y: 0 };
+    applyRootPosition(flatPositionRef.current);
+    onDrop?.(id, {
+      position: currentPosition,
+      targetId: 'home-month-content',
+      accepted: true,
+    });
   }
 
   function movePointerDrag(event) {
@@ -772,6 +798,8 @@ export default function PeelableSticker({
       onPointerMove={movePointerDrag}
       onPointerUp={finishPointerDrag}
       onPointerCancel={finishPointerDrag}
+      onTouchStart={cancelPointerDragForMultiTouch}
+      onTouchMove={cancelPointerDragForMultiTouch}
     >
       {showBaseImage ? (
         <img
