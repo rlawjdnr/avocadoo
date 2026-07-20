@@ -76,6 +76,7 @@ export default function PeelableSticker({
   rotation = 0,
   disabled = false,
   selected = false,
+  transformActive = false,
   debugMesh = false,
   className = '',
   settleFrom = null,
@@ -129,6 +130,15 @@ export default function PeelableSticker({
   useEffect(() => {
     if (previewPeel || settleFrom) setPixiActive(true);
   }, [previewPeel, settleFrom]);
+
+  useEffect(() => {
+    if (transformActive) {
+      showPixiLayer();
+      applyFlatMesh();
+      return;
+    }
+    hidePixiLayer();
+  }, [transformActive]);
 
   useEffect(() => {
     const mediaQuery = typeof window !== 'undefined' && window.matchMedia
@@ -368,12 +378,14 @@ export default function PeelableSticker({
 
   function showPixiLayer() {
     setPixiActive(true);
+    if (pixiReady) setPixiVisible(true);
     if (pixiHostRef.current) pixiHostRef.current.style.visibility = 'visible';
   }
 
   function hidePixiLayer() {
-    if (previewPeel || dragRef.current || attachRef.current) return;
+    if (previewPeel || transformActive || dragRef.current || attachRef.current) return;
     setPixiActive(false);
+    setPixiVisible(false);
     if (pixiHostRef.current) pixiHostRef.current.style.visibility = 'hidden';
   }
 

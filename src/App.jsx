@@ -2145,6 +2145,7 @@ function HomeSticker({
   onSelect,
   onReady,
   hidden = false,
+  transforming = false,
 }) {
   const shouldBounce = !editable && bounceKey > 0 && bounceIndex >= 0;
   const stickerPosition = { x: sticker.x, y: sticker.y };
@@ -2161,6 +2162,7 @@ function HomeSticker({
       rotation={sticker.rotation}
       disabled={!canDragSticker}
       selected={selected}
+      transformActive={transforming}
       className={`${canDragSticker ? 'home-sticker-editable' : ''} ${shouldBounce ? 'home-sticker-bounced' : ''} ${hidden ? 'home-sticker-hidden-until-ready' : ''}`}
       settleFrom={sticker.settleFrom}
       getDropResult={getDropResult}
@@ -2201,6 +2203,7 @@ const MemoizedHomeSticker = memo(HomeSticker, (previous, next) => (
   previous.bounceIndex === next.bounceIndex &&
   previous.bounceCount === next.bounceCount &&
   previous.hidden === next.hidden &&
+  previous.transforming === next.transforming &&
   previous.sticker.id === next.sticker.id &&
   previous.sticker.type === next.sticker.type &&
   previous.sticker.x === next.sticker.x &&
@@ -2223,6 +2226,7 @@ function HomeStickerLayer({
   onStickerSelect,
   onStickerReady,
   hiddenStickerId = '',
+  transformingStickerId = '',
 }) {
   const layerRef = useRef(null);
   const activePointers = useRef(new Map());
@@ -2385,6 +2389,7 @@ function HomeStickerLayer({
           onSelect={onStickerSelect}
           onReady={onStickerReady}
           hidden={sticker.id === hiddenStickerId}
+          transforming={sticker.id === transformingStickerId}
         />
       ))}
     </div>
@@ -2408,6 +2413,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
     onStickerSelect,
     onStickerReady,
     hiddenStickerId = '',
+    transformingStickerId = '',
   } = arguments[0] || {};
 
   useLayoutEffect(() => {
@@ -2440,6 +2446,7 @@ function HomeMonthPage({ weeks, onSelectWeek, isRenderable = true }) {
               onStickerSelect={onStickerSelect}
               onStickerReady={onStickerReady}
               hiddenStickerId={hiddenStickerId}
+              transformingStickerId={transformingStickerId}
             />
             {weeks.map((week) => {
               const hasDiary = week.photos.length > 0;
@@ -2847,6 +2854,7 @@ function Home({
   const [selectedStickerId, setSelectedStickerId] = useState('');
   const [readyStickerId, setReadyStickerId] = useState('');
   const [pendingDropStickerId, setPendingDropStickerId] = useState('');
+  const [transformingStickerId, setTransformingStickerId] = useState('');
   const [stickerBounce, setStickerBounce] = useState({ key: 0, ids: [] });
   const [weeklySummariesByMonth, setWeeklySummariesByMonth] = useState(readWeeklySummaryCache);
   const [loadingSummaryMonthKeys, setLoadingSummaryMonthKeys] = useState(() => new Set());
@@ -2984,6 +2992,7 @@ function Home({
     if (!isStickerPickerOpen) {
       stickerScreenPointerPoints.current.clear();
       stickerScreenGesture.current = null;
+      setTransformingStickerId('');
       return;
     }
 
@@ -3374,6 +3383,7 @@ function Home({
     };
 
     if (points.length >= 2) {
+      setTransformingStickerId(stickerScreenGesture.current.sticker.id);
       const distance = getGestureDistance(points[0], points[1]);
       const angle = getGestureAngle(points[0], points[1]);
       nextSticker.scale = Math.min(
@@ -3420,6 +3430,7 @@ function Home({
     }
 
     cancelPeelDragForMultiTouch();
+    setTransformingStickerId(selectedSticker.id);
     if (!stickerScreenGesture.current && touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
       setSelectedStickerId(touchedStickerId);
     }
@@ -3484,6 +3495,7 @@ function Home({
 
     if (points.length >= 2) {
       cancelPeelDragForMultiTouch();
+      setTransformingStickerId(selectedSticker.id);
       event.stopPropagation();
       if (event.cancelable) event.preventDefault();
     }
@@ -3519,6 +3531,7 @@ function Home({
     stickerScreenPointerPoints.current.delete(event.pointerId);
     const points = getStickerPointerPoints();
     if (points.length < 2) {
+      setTransformingStickerId('');
       stickerScreenGesture.current = null;
       return;
     }
@@ -3533,6 +3546,7 @@ function Home({
 
     event.stopPropagation();
     if (event.touches.length < 2) {
+      setTransformingStickerId('');
       stickerScreenGesture.current = null;
       return;
     }
@@ -3788,6 +3802,7 @@ function Home({
               onStickerSelect={setSelectedStickerId}
               onStickerReady={handleStickerReady}
               hiddenStickerId={index === activeMonthIndex ? pendingDropStickerId : ''}
+              transformingStickerId={index === activeMonthIndex ? transformingStickerId : ''}
               onSelectWeek={handleSelectWeek}
             />
           ))}
