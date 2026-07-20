@@ -3420,7 +3420,7 @@ function Home({
     }
 
     cancelPeelDragForMultiTouch();
-    if (touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
+    if (!stickerScreenGesture.current && touchedStickerId && touchedStickerId !== currentSelectedStickerId) {
       setSelectedStickerId(touchedStickerId);
     }
 
@@ -3466,13 +3466,17 @@ function Home({
     if (!isStickerPickerOpenRef.current || event.pointerType !== 'touch') return;
     if (event.target.closest?.('button')) return;
 
+    const hasActivePointerGesture = stickerScreenPointerPoints.current.size > 0;
     const touchedStickerId = event.target.closest?.('.home-sticker-editable')?.dataset?.stickerId;
     const isSheetTouch = Boolean(event.target.closest?.('.sticker-picker-sheet'));
     const canStartFocusedGesture = Boolean(touchedStickerId || selectedStickerIdRef.current);
     if (isSheetTouch) return;
     if (!canStartFocusedGesture && stickerScreenPointerPoints.current.size === 0) return;
 
-    const selectedSticker = getSelectedStickerForGesture(touchedStickerId);
+    const gestureStickerId = hasActivePointerGesture
+      ? stickerScreenGesture.current?.sticker?.id || selectedStickerIdRef.current
+      : touchedStickerId;
+    const selectedSticker = getSelectedStickerForGesture(gestureStickerId);
     if (!selectedSticker) return;
 
     stickerScreenPointerPoints.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -3484,7 +3488,7 @@ function Home({
       if (event.cancelable) event.preventDefault();
     }
 
-    if (touchedStickerId && touchedStickerId !== selectedStickerIdRef.current) {
+    if (!hasActivePointerGesture && touchedStickerId && touchedStickerId !== selectedStickerIdRef.current) {
       setSelectedStickerId(touchedStickerId);
     }
 

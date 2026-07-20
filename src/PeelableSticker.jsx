@@ -476,6 +476,10 @@ export default function PeelableSticker({
       x: flatPositionRef.current.x + visualRootOffset.x,
       y: flatPositionRef.current.y + visualRootOffset.y,
     });
+    const attachCurlProgress = attach ? easeOutCubic(attach.curlProgress || 0) : 1;
+    const curlMultiplier = attach
+      ? lerp(stickerMotionConfig.attachCurlStartMultiplier, stickerMotionConfig.attachCurlEndMultiplier, attachCurlProgress)
+      : 1;
     const deformation = applyPeelDeformation({
       vertices: state.vertices,
       positions: state.positions,
@@ -486,7 +490,7 @@ export default function PeelableSticker({
       pointerDelta: state.pointerDelta,
       peelProgress: state.peelProgress,
       feather: stickerMotionConfig.peelFeather,
-      curlAmount: stickerMotionConfig.curlAmount,
+      curlAmount: stickerMotionConfig.curlAmount * curlMultiplier,
       curlWidth: stickerMotionConfig.curlWidth,
       floatingTipCurlAmount: stickerMotionConfig.floatingTipCurlAmount,
       floatingTipCurlWidth: stickerMotionConfig.floatingTipCurlWidth,
@@ -736,9 +740,11 @@ export default function PeelableSticker({
 
     function updateSettle(value) {
       const eased = clamp(value, 0, 1);
+      const peelDelay = accepted ? stickerMotionConfig.attachPeelDelay : 0;
+      const peelEase = easeOutCubic(clamp((eased - peelDelay) / Math.max(1 - peelDelay, 0.0001), 0, 1));
       attachRef.current = {
         peelCorner,
-        peelProgress: fromProgress * (1 - eased),
+        peelProgress: fromProgress * (1 - peelEase),
         pointerDelta: {
           x: fromPointerDelta.x * (1 - eased),
           y: fromPointerDelta.y * (1 - eased),
@@ -747,6 +753,7 @@ export default function PeelableSticker({
           x: lerp(fromRootOffset.x, targetRootOffset.x, eased),
           y: lerp(fromRootOffset.y, targetRootOffset.y, eased),
         },
+        curlProgress: eased,
       };
     }
 
@@ -771,11 +778,8 @@ export default function PeelableSticker({
     settleAnimationRef.current?.stop?.();
     showPixiLayer();
     settleAnimationRef.current = animate(0, 1, accepted ? {
-      type: 'spring',
-      stiffness: 480,
-      damping: 50,
-      restDelta: 0.001,
-      restSpeed: 0.001,
+      duration: duration / 1000,
+      ease: easeOutCubic,
       onUpdate: updateSettle,
       onComplete: completeSettle,
     } : {
