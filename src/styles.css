@@ -2434,8 +2434,26 @@ body.splash-active .screen-stage {
   font-weight: 600;
 }
 
+.upload-screen {
+  --diary-keyboard-bottom: 0px;
+  --diary-cta-height: 113px;
+}
+
+.upload-screen.diary-keyboard-open {
+  --diary-cta-height: 73px;
+}
+
+.upload-screen .bottom-cta {
+  bottom: var(--diary-keyboard-bottom);
+}
+
+.upload-screen.diary-keyboard-open .bottom-cta {
+  height: var(--diary-cta-height);
+  padding: 8px 16px;
+}
+
 .upload-content {
-  bottom: 113px;
+  bottom: calc(var(--diary-keyboard-bottom) + var(--diary-cta-height));
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-padding-block: 20px;
