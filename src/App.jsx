@@ -5143,6 +5143,70 @@ function StaticUploadField({ children }) {
   return <div>{children}</div>;
 }
 
+function DiaryTextarea({ value, onChange }) {
+  const textareaRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    const resize = () => {
+      textarea.style.height = '0px';
+      textarea.style.height = `${Math.max(220, textarea.scrollHeight)}px`;
+    };
+    resize();
+    let previousWidth = textarea.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === previousWidth) return;
+      previousWidth = textarea.clientWidth;
+      resize();
+    });
+    observer.observe(textarea);
+    document.fonts.ready.then(() => {
+      if (textarea.isConnected) resize();
+    });
+    return () => observer.disconnect();
+  }, [value]);
+
+  return <textarea ref={textareaRef} placeholder="어떤 하루였나요?" value={value} onChange={onChange} />;
+}
+
+function useDiaryKeyboard() {
+  const screenRef = useRef(null);
+
+  useEffect(() => {
+    const screen = screenRef.current;
+    const viewport = window.visualViewport;
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const focused = screen.contains(document.activeElement)
+          && document.activeElement.matches('textarea, input:not([type="file"])');
+        const visualBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight);
+        const offset = focused ? Math.max(0, screen.getBoundingClientRect().bottom - visualBottom) : 0;
+        const open = focused && window.innerHeight - (viewport?.height || window.innerHeight) > 120;
+        screen.style.setProperty('--diary-keyboard-bottom', `${offset}px`);
+        screen.classList.toggle('diary-keyboard-open', open);
+      });
+    };
+    update();
+    screen.addEventListener('focusin', update);
+    screen.addEventListener('focusout', update);
+    window.addEventListener('resize', update);
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    return () => {
+      cancelAnimationFrame(frame);
+      screen.removeEventListener('focusin', update);
+      screen.removeEventListener('focusout', update);
+      window.removeEventListener('resize', update);
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  return screenRef;
+}
+
 function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transitionKind, screenPushDistance, currentNickname = currentMemberNickname, autoOpenDatePicker = false, onDatePickerAutoOpened }) {
   const [photos, setPhotos] = useState([]);
   const [date, setDate] = useState(initialDate);
@@ -5154,6 +5218,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   const dateInputRef = useRef(null);
   const didAutoOpenDatePicker = useRef(false);
   const releaseUploadPress = () => setIsUploadPressed(false);
+  const screenRef = useDiaryKeyboard();
   const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
   const uploadGridRows = Math.ceil((photos.length + (photos.length < maxUploadPhotos ? 1 : 0)) / uploadGridColumnCount) || 1;
 
@@ -5249,7 +5314,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
   }
 
   return (
-    <motion.section className="phone upload-screen" {...screenMotionProps('upload', transitionKind, true, screenPushDistance)}>
+    <motion.section ref={screenRef} className="phone upload-screen" {...screenMotionProps('upload', transitionKind, true, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <NavHeader onNavigate={onNavigate} />
       <motion.div className="upload-content" data-grid-rows={uploadGridRows} variants={uploadContentVariants} initial="hidden" animate="visible">
@@ -5271,7 +5336,7 @@ function Upload({ initialDate, onCreateEntry, onNavigate, selectedWeek, transiti
           </AnimatedUploadField>
           <AnimatedUploadField order={3}>
             <label className="memo-field">
-              <textarea placeholder="어떤 하루였나요?" value={text} onChange={(event) => setText(event.target.value)} />
+              <DiaryTextarea value={text} onChange={(event) => setText(event.target.value)} />
             </label>
           </AnimatedUploadField>
           {error ? <p className="form-error">{error}</p> : null}
@@ -5346,6 +5411,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isSavePressed, setIsSavePressed] = useState(false);
   const releaseSavePress = () => setIsSavePressed(false);
+  const screenRef = useDiaryKeyboard();
   const primaryUploadWidth = Math.max(uploadButtonSize.small, screenPushDistance - 32);
   const uploadGridRows = Math.ceil((photos.length + (photos.length < maxUploadPhotos ? 1 : 0)) / uploadGridColumnCount) || 1;
 
@@ -5419,7 +5485,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
   }
 
   return (
-    <motion.section className="phone upload-screen edit-screen" {...screenMotionProps('edit', transitionKind, true, screenPushDistance)}>
+    <motion.section ref={screenRef} className="phone upload-screen edit-screen" {...screenMotionProps('edit', transitionKind, true, screenPushDistance)}>
       <img className="paper-bg" src={assets.bg} alt="" />
       <EditHeader onBack={() => setIsDeleteModalOpen(true)} onDelete={deleteEntry} />
       <div className="upload-content edit-content" data-grid-rows={uploadGridRows}>
@@ -5448,7 +5514,7 @@ function EditEntry({ entry, transitionKind, screenPushDistance, onNavigate, onUp
           </StaticUploadField>
           <StaticUploadField>
             <label className="memo-field">
-              <textarea placeholder="어떤 하루였나요?" value={text} onChange={(event) => setText(event.target.value)} />
+              <DiaryTextarea value={text} onChange={(event) => setText(event.target.value)} />
             </label>
           </StaticUploadField>
           {error ? <p className="form-error">{error}</p> : null}
